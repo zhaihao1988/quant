@@ -21,9 +21,13 @@ def create_server():
         return services.securities(query)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    def daily_bars(symbol:str,end:str|None=None,limit:int=200,adjustment:str='qfq',start:str|None=None) -> dict:
-        """查询日线、成交量（股）、成交额（元）与估算换手率；start/end为YYYY-MM-DD。全历史可用limit=20000；返回本地覆盖与截断标记。"""
+    def daily_bars(symbol:str,end:str|None=None,limit:int=200,adjustment:str='qfq',start:str|None=None,
+                   timeframe:str='daily',with_indicators:bool=False) -> dict:
+        """查询日/周/月K线。timeframe为daily/weekly/monthly，with_indicators返回MA、MACD和量均线。日期YYYY-MM-DD。成交量股、金额元，周月换手率按日累加。"""
         if not 1<=limit<=20000:raise ValueError('limit须为1至20000')
+        if with_indicators or timeframe!='daily':
+            from .charting import market_data
+            return market_data(symbol,date.fromisoformat(end) if end else None,date.fromisoformat(start) if start else None,limit,adjustment,timeframe)
         return services.bars(symbol,date.fromisoformat(end) if end else None,limit,adjustment,date.fromisoformat(start) if start else None)
 
     @mcp.tool()

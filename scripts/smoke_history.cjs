@@ -16,7 +16,7 @@ const fs=require('node:fs');
     fs.mkdirSync('artifacts',{recursive:true});
     await page.screenshot({path:'artifacts/market-full-history.png',fullPage:true});
     await page.selectOption('#market-range','120');await page.click('#market-form button');
-    await page.waitForFunction(()=>document.querySelector('#market-info').textContent.includes('120 条'));
+    await page.waitForFunction(()=>document.querySelector('#market-info').textContent.includes('120 根K线'));
     await page.selectOption('#market-range','20000');
     await page.fill('#market-start','2020-01-01');await page.fill('#market-end','2020-12-31');
     await page.click('#market-form button');

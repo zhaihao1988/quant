@@ -62,7 +62,7 @@ def bars(symbol, end=None, limit=500, adjustment='qfq', start=None):
             ORDER BY effective_date DESC,CASE quality WHEN 'event' THEN 0 ELSE 1 END LIMIT 1)s ON true
           ORDER BY b.trade_date''',(symbol,end,limit+1)).fetchall()
         events=conn.execute('SELECT * FROM capital_event WHERE symbol=%s AND event_date<=%s ORDER BY event_date',(symbol,end)).fetchall()
-    metadata={'symbol':symbol,'name':security['name'] if security else symbol,'adjustment':adjustment,
+    metadata={'symbol':symbol,'name':security['name'] if security else symbol,'adjustment':adjustment,'as_of':end,
               'available_start':coverage['available_start'],'available_end':coverage['available_end'],
               'available_rows':coverage['available_rows'],'range_rows':coverage['range_rows']}
     if not rows:

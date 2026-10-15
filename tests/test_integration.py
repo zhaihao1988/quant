@@ -115,3 +115,95 @@ def test_history_range_metadata_and_previous_close(isolated_db):
     assert limited['bars'][0]['price_change']==1
     with pytest.raises(ValueError,match='起始日'):
         bars('300138.SZ',date(2026,10,9),20000,'raw',date(2026,10,10))
+
+
+def test_block_incremental_and_old_revision(isolated_db,tmp_path):
+    from datetime import timedelta
+    from quant.ingest import import_day
+    from quant.db import connect
+    p=tmp_path/'sz300138.day'
+    def record(i,close=1100):
+        d=date(2020,1,1)+timedelta(days=i)
+        return struct.pack('<IIIIIfII',int(d.strftime('%Y%m%d')),1000,1200,900,close,100000,10000,0)
+    original=b''.join(record(i) for i in range(600));p.write_bytes(original)
+    first=import_day(p,'300138.SZ',details=True)
+    assert first['changed']==600 and first['parsed']==600
+    p.write_bytes(original+record(600))
+    appended=import_day(p,'300138.SZ',details=True)
+    assert appended['changed']==1 and 0<appended['parsed']<100
+    revised=bytearray(p.read_bytes());revised[10*32:11*32]=record(10,1150);p.write_bytes(revised)
+    history=import_day(p,'300138.SZ',details=True)
+    assert history['changed']==1 and history['parsed']==601
+    with connect() as c:
+        assert c.execute('SELECT count(*) AS n FROM daily_bar').fetchone()['n']==601
+        assert float(c.execute("SELECT close FROM daily_bar WHERE trade_date='2020-01-11'").fetchone()['close'])==11.5
+
+
+def test_verify_detects_same_timestamp_modification(isolated_db,tmp_path):
+    from quant.ingest import import_day
+    p=tmp_path/'sz300138.day'
+    def record(close):return struct.pack('<IIIIIfII',20261008,1000,1200,900,close,100000,10000,0)
+    p.write_bytes(record(1100));import_day(p,'300138.SZ');old=p.stat()
+    p.write_bytes(record(1150));os.utime(p,ns=(old.st_atime_ns,old.st_mtime_ns))
+    assert import_day(p,'300138.SZ',mode='verify')==(1,False)
+
+
+def test_changing_source_rolls_back_file_transaction(isolated_db,tmp_path,monkeypatch):
+    from quant import ingest
+    from quant.db import connect
+    p=tmp_path/'sz300138.day'
+    first=struct.pack('<IIIIIfII',20261008,1000,1200,900,1100,100000,10000,0)
+    second=struct.pack('<IIIIIfII',20261009,1000,1200,900,1150,100000,10000,0)
+    p.write_bytes(first);ingest.import_day(p,'300138.SZ');p.write_bytes(first+second)
+    original=ingest.day_records
+    def mutate(data):
+        yield from original(data)
+        p.write_bytes(first+second+b'partial')
+    monkeypatch.setattr(ingest,'day_records',mutate)
+    with pytest.raises(ValueError,match='回滚'):ingest.import_day(p,'300138.SZ')
+    with connect() as c:assert c.execute('SELECT count(*) AS n FROM daily_bar').fetchone()['n']==1
+
+
+def test_duplicate_clicks_share_one_task_and_orphans_recover(isolated_db,monkeypatch):
+    from quant.api import app
+    from quant import api
+    from quant.db import connect
+    from quant.ingest import reserve_run
+    calls=[];monkeypatch.setattr(api,'run_import',lambda *a:calls.append(a))
+    client=TestClient(app)
+    one=client.post('/api/imports',json={}).json();two=client.post('/api/imports',json={}).json()
+    assert one['id']==two['id'] and two['reused'] and len(calls)==1
+    with connect() as c:c.execute("UPDATE import_run SET status='running',heartbeat_at=now()-interval '10 minutes' WHERE id=%s",(one['id'],))
+    recovered,reused=reserve_run()
+    assert not reused and recovered!=one['id']
+    with connect() as c:assert c.execute('SELECT status FROM import_run WHERE id=%s',(one['id'],)).fetchone()['status']=='interrupted'
+
+
+def test_missing_database_tail_repairs_even_with_unchanged_source(isolated_db,tmp_path):
+    from datetime import timedelta
+    from quant.ingest import import_day
+    from quant.db import connect
+    from quant.config import settings
+    from psycopg.rows import dict_row
+    p=tmp_path/'sz300138.day'
+    records=[]
+    for i in range(300):
+        d=date(2020,1,1)+timedelta(days=i)
+        records.append(struct.pack('<IIIIIfII',int(d.strftime('%Y%m%d')),1000,1200,900,1100,100000,10000,0))
+    p.write_bytes(b''.join(records));import_day(p,'300138.SZ')
+    with connect() as c:c.execute("DELETE FROM daily_bar WHERE trade_date>='2020-09-01'")
+    # Same source and fingerprints, but actual DB latest date is behind. A pooled
+    # autocommit connection still uses an independent transaction per file.
+    with psycopg.connect(settings().database_url,autocommit=True,row_factory=dict_row) as c:
+        result=import_day(p,'300138.SZ',details=True,connection=c)
+        assert result['changed']==56 and not result['skipped'] and result['parsed']<100
+        assert c.execute('SELECT count(*) AS n FROM daily_bar').fetchone()['n']==300
+
+
+def test_incremental_checks_recent_tail_even_if_timestamp_unchanged(isolated_db,tmp_path):
+    from quant.ingest import import_day
+    p=tmp_path/'sz300138.day'
+    def record(close):return struct.pack('<IIIIIfII',20261008,1000,1200,900,close,100000,10000,0)
+    p.write_bytes(record(1100));import_day(p,'300138.SZ');old=p.stat()
+    p.write_bytes(record(1150));os.utime(p,ns=(old.st_atime_ns,old.st_mtime_ns))
+    assert import_day(p,'300138.SZ')==(1,False)

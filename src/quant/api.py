@@ -9,7 +9,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 from . import services
 from .domain import ScreenRequest
-from .ingest import new_run,run_import
+from .ingest import reserve_run,run_import
 from .db import connect
 
 app=FastAPI(title='Quant 本地选股工作台',version='0.1.0')
@@ -62,14 +62,51 @@ def get_bars(symbol:str,end:date|None=None,start:date|None=None,limit:int=Query(
     return services.bars(symbol,end,limit,adjustment,start)
 
 
+@app.get('/api/market/{symbol}')
+def market(symbol:str,end:date|None=None,start:date|None=None,limit:int=Query(20000,ge=1,le=20000),
+           adjustment:str='qfq',timeframe:str='daily',ma:str='5,10,20,60',fast:int=12,slow:int=26,signal:int=9):
+    from .charting import market_data
+    try:periods=[int(v.strip()) for v in ma.split(',') if v.strip()]
+    except ValueError:raise ValueError('均线参数需为逗号分隔的整数')
+    return market_data(symbol,end,start,limit,adjustment,timeframe,periods,fast,slow,signal)
+
+
 class ImportRequest(BaseModel):
     symbols:list[str]=Field(default_factory=list,max_length=10000)
+    mode:str='incremental'
 
 
 @app.post('/api/imports',status_code=202)
 def start_import(body:ImportRequest,tasks:BackgroundTasks):
-    run_id=new_run();tasks.add_task(run_import,run_id,body.symbols)
-    return {'id':run_id,'status':'queued'}
+    run_id,reused=reserve_run(body.symbols,body.mode)
+    if not reused:tasks.add_task(run_import,run_id,body.symbols,body.mode)
+    return {'id':run_id,'status':'existing' if reused else 'queued','reused':reused}
+
+
+@app.post('/api/imports/{run_id}/retry',status_code=202)
+def retry_import(run_id:UUID,tasks:BackgroundTasks):
+    with connect() as conn:
+        old=conn.execute('SELECT * FROM import_run WHERE id=%s',(run_id,)).fetchone()
+        failed=conn.execute("SELECT symbol FROM import_item WHERE run_id=%s AND state='failed'",(run_id,)).fetchall()
+    if not old:raise HTTPException(404,'任务不存在')
+    if old['status'] in ('queued','running'):raise HTTPException(409,'任务仍在运行')
+    symbols=[r['symbol'] for r in failed] or old['symbols']
+    new_id,reused=reserve_run(symbols,old['mode'],str(run_id))
+    if not reused:tasks.add_task(run_import,new_id,symbols,old['mode'])
+    return {'id':new_id,'reused':reused,'status':'existing' if reused else 'queued'}
+
+
+@app.get('/api/sync/status')
+def sync_status(state:str='',q:str='',offset:int=Query(0,ge=0),limit:int=Query(30,ge=1,le=100)):
+    from .sync_status import comparison
+    return comparison(state,q,offset,limit)
+
+
+@app.post('/api/sync/scan',status_code=202)
+def scan_sync(tasks:BackgroundTasks):
+    from .sync_status import scan_sources
+    tasks.add_task(scan_sources)
+    return {'status':'scanning','scope':'A股'}
 
 
 @app.get('/api/imports/{run_id}')
