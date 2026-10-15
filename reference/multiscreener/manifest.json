@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/zhaihao1988/quant_platform",
+  "commit": "e7dcdb2819ede83220f423ed7563acd1e1fdc63f",
+  "purpose": "Unmodified reference only; not imported by the application.",
+  "files": {
+    "multi_strategy_screener.py": "b6246d57c9668a1f411add99b34658a5c7a500ac35debeb806baff78f7de1f91",
+    "strategies/base_strategy.py": "101370688525f307c79d03fffd11552ad5bd37a1273b87479e5f5c6923ea34b7",
+    "strategies/ma_pullback_strategy.py": "efba3f2b1b9532ffe7a5b4f6ecf015fd2824c672aa7a11af7557739336947305",
+    "strategies/multi_level_cross_refactored_strategy.py": "4fbee531c44f82f31692d12976dbd8a51fe1a7c5f413fae0189647799104ee5e",
+    "strategies/breakout_strategy.py": "df2f9510e9e59c067b90fe768ed056339bba83473b5987656ebb6275822c1f09",
+    "strategies/weekly_ma_pullback_strategy.py": "f77d4986a218ea1740f50edab94a1de9d7c90b8bb6a334e1c6059a791e099b58",
+    "strategies/monthly_ma_pullback_strategy.py": "b14d0a0277bb6d36e84dd3d72fbf40ac936312b3f7ee36bbf574fd6153ed80e4",
+    "strategies/weekly_breakout_strategy.py": "335f71df4d8db2248ce1abc39e918f67d23e84a2ce720637bac06bc933d90a3b",
+    "strategies/monthly_breakout_strategy.py": "9a3c63b3fece2be5fe915dd54640424e0de7556b686529b75efed2f2e94ffc9a",
+    "analysis/fundamental_analyzer.py": "8bbd8204a38b590feaaaf66c5b23ad160321f13aa8c58991b7c53295d40b1ccb",
+    "data_processing/aggregators.py": "537cbe3deeab5a24b859b870060fcad006dc03a7b1dec278cccb514a64d5161f",
+    "db/crud.py": "877930b2230ca412b5258819549b1c65d6fcdcbc74079d9429fbbb4ae3733201"
+  }
+}

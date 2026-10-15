@@ -125,6 +125,39 @@ def run_screen(body:ScreenRequest):return services.screen(body)
 def get_taxonomies():return services.taxonomies()
 
 
+from .multiscreener import MultiScreenRequest, strategy_catalog
+
+
+@app.get('/api/multi-screens/strategies')
+def multi_strategies():return strategy_catalog()
+
+
+@app.get('/api/multi-screens')
+def multi_recent():
+    from .multi_jobs import recent
+    return recent()
+
+
+@app.post('/api/multi-screens',status_code=202)
+def multi_start(body:MultiScreenRequest,tasks:BackgroundTasks):
+    from .multi_jobs import reserve,run_job
+    run_id,reused=reserve(body)
+    if not reused:tasks.add_task(run_job,run_id)
+    return {'id':run_id,'reused':reused}
+
+
+@app.get('/api/multi-screens/{run_id}')
+def multi_status(run_id:UUID):
+    from .multi_jobs import snapshot
+    return snapshot(run_id)
+
+
+@app.post('/api/multi-screens/{run_id}/cancel')
+def multi_cancel(run_id:UUID):
+    from .multi_jobs import cancel
+    return cancel(run_id)
+
+
 @app.get('/api/graph')
 def get_graph(q:str=Query(min_length=1,max_length=100)):return services.graph(q)
 

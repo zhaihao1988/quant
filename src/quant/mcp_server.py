@@ -41,6 +41,29 @@ def create_server():
         return services.taxonomies()
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def multi_strategy_catalog() -> dict:
+        """查看旧项目原7个技术策略及默认参数。算法保留，前复权、量单位手、全部历史。"""
+        from .multiscreener import strategy_catalog
+        return strategy_catalog()
+
+    @mcp.tool()
+    def start_multi_screen(parameters:dict) -> dict:
+        """后台运行原多策略选股；as_of、symbols(如300138.SZ)、taxonomy_id、strategies(类名列表)。返回任务ID，用multi_screen_status查询。各策略独立汇总，不取交集；基本面未接入。"""
+        from threading import Thread
+        from .multiscreener import MultiScreenRequest
+        from .multi_jobs import reserve,run_job
+        run_id,reused=reserve(MultiScreenRequest.model_validate(parameters))
+        if not reused:Thread(target=run_job,args=(run_id,),daemon=True).start()
+        return {'id':run_id,'reused':reused}
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def multi_screen_status(run_id:str) -> dict:
+        """查询多策略任务进度、技术信号、数据覆盖和错误。"""
+        from uuid import UUID
+        from .multi_jobs import snapshot
+        return snapshot(UUID(run_id))
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def industry_graph(query:str) -> dict:
         """查询公司与行业分类关系及证据；不将分类归属推断为上下游。"""
         return services.graph(query)

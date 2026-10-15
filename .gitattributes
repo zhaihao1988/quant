@@ -1,0 +1,3 @@
+# Keep user-designed source snapshots byte-identical across Windows and Linux.
+reference/multiscreener/** -text
+src/quant/legacy_strategies/*.py -text
