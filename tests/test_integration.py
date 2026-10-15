@@ -96,3 +96,22 @@ def test_actual_mcp_stdio_handshake(isolated_db):
                 assert not result.isError
                 assert '300138.SZ' in json.dumps(result.model_dump(mode='json'))
     asyncio.run(exercise())
+
+
+def test_history_range_metadata_and_previous_close(isolated_db):
+    from quant.db import connect
+    from quant.services import bars
+    with connect() as conn:
+        for day,price in [(8,10),(9,11),(10,12)]:
+            conn.execute('INSERT INTO daily_bar(symbol,trade_date,open,high,low,close,volume,amount) VALUES (%s,%s,%s,%s,%s,%s,100,1000)',
+                         ('300138.SZ',date(2026,10,day),price,price,price,price))
+    history=bars('300138.SZ',date(2026,10,10),20000,'raw',date(2026,10,9))
+    assert history['available_start']=='2026-10-08' and history['available_rows']==3
+    assert history['range_rows']==2 and history['returned_rows']==2 and not history['truncated']
+    assert [b['trade_date'] for b in history['bars']]==['2026-10-09','2026-10-10']
+    assert history['bars'][0]['pct_change']==10  # Uses the prior day outside the visible range.
+    limited=bars('300138.SZ',date(2026,10,10),1,'raw')
+    assert limited['truncated'] and limited['returned_rows']==1 and limited['range_rows']==3
+    assert limited['bars'][0]['price_change']==1
+    with pytest.raises(ValueError,match='起始日'):
+        bars('300138.SZ',date(2026,10,9),20000,'raw',date(2026,10,10))

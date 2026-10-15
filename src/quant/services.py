@@ -38,15 +38,23 @@ def securities(query='', limit=30):
           WHERE s.symbol ILIKE %s OR s.name ILIKE %s ORDER BY s.symbol LIMIT %s''',(f'%{query}%',f'%{query}%',limit)).fetchall())
 
 
-def bars(symbol, end=None, limit=500, adjustment='qfq'):
+def bars(symbol, end=None, limit=500, adjustment='qfq', start=None):
     if adjustment not in ('raw','qfq'):
         raise ValueError('adjustment必须为raw或qfq')
+    if not 1<=limit<=20000:
+        raise ValueError('limit须为1至20000')
     with connect() as conn:
         if end is None:
             session=market_session(conn)
             if not session:
                 raise ValueError('尚无覆盖充分的已收盘日线；如需查看盘中缓存，请显式指定截止日')
             end=session['trade_date']
+        if start and start>end:
+            raise ValueError('起始日不能晚于截止日')
+        coverage=conn.execute('''SELECT min(trade_date) AS available_start,max(trade_date) AS available_end,
+          count(*) AS available_rows,count(*) FILTER(WHERE trade_date<=%s AND (%s::date IS NULL OR trade_date>=%s)) AS range_rows
+          FROM daily_bar WHERE symbol=%s''',(end,start,start,symbol)).fetchone()
+        security=conn.execute('SELECT name FROM security WHERE symbol=%s',(symbol,)).fetchone()
         rows=conn.execute('''SELECT b.*,s.float_shares,s.source AS turnover_source,s.quality AS share_quality,
             CASE WHEN s.float_shares>0 THEN 100.0*b.volume/s.float_shares END AS turnover_pct
           FROM (SELECT * FROM daily_bar WHERE symbol=%s AND trade_date<=%s ORDER BY trade_date DESC LIMIT %s)b
@@ -54,8 +62,11 @@ def bars(symbol, end=None, limit=500, adjustment='qfq'):
             ORDER BY effective_date DESC,CASE quality WHEN 'event' THEN 0 ELSE 1 END LIMIT 1)s ON true
           ORDER BY b.trade_date''',(symbol,end,limit+1)).fetchall()
         events=conn.execute('SELECT * FROM capital_event WHERE symbol=%s AND event_date<=%s ORDER BY event_date',(symbol,end)).fetchall()
+    metadata={'symbol':symbol,'name':security['name'] if security else symbol,'adjustment':adjustment,
+              'available_start':coverage['available_start'],'available_end':coverage['available_end'],
+              'available_rows':coverage['available_rows'],'range_rows':coverage['range_rows']}
     if not rows:
-        return {'symbol':symbol,'bars':[],'adjustment':adjustment,'anchor':None}
+        return clean({**metadata,'bars':[],'anchor':None,'returned_rows':0,'truncated':False})
     anchor=rows[-1]['trade_date']
     special=[e for e in events if (e['category'] in (11,12) or e['category']>14) and rows[0]['trade_date']<e['event_date']<=anchor]
     if adjustment=='qfq' and special:
@@ -67,7 +78,10 @@ def bars(symbol, end=None, limit=500, adjustment='qfq'):
         row.update(price_changes(row,previous))
         previous=row
     rows=rows[-limit:]
-    return clean({'symbol':symbol,'adjustment':adjustment,'anchor':anchor,'bars':rows,
+    if start:
+        rows=[row for row in rows if row['trade_date']>=start]
+    return clean({**metadata,'anchor':anchor,'bars':rows,'returned_rows':len(rows),
+                  'truncated':coverage['range_rows']>len(rows),
                   'turnover_note':'按最近可用股本事件向后延续估算；当前快照不回填过去。历史事件覆盖可能不完整。',
                   'price_note':'普通仿射前复权，与实际分红再投资收益不同；涨跌额、涨跌幅、振幅基于所选价格口径的前一交易日收盘计算；金额和成交量保持原始值'})
 

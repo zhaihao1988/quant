@@ -21,10 +21,10 @@ def create_server():
         return services.securities(query)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    def daily_bars(symbol:str,end:str|None=None,limit:int=200,adjustment:str='qfq') -> dict:
-        """查询日线、成交量（股）、成交额（元）与有依据的估算换手率；end为YYYY-MM-DD。"""
-        if not 1<=limit<=5000:raise ValueError('limit须为1至5000')
-        return services.bars(symbol,date.fromisoformat(end) if end else None,limit,adjustment)
+    def daily_bars(symbol:str,end:str|None=None,limit:int=200,adjustment:str='qfq',start:str|None=None) -> dict:
+        """查询日线、成交量（股）、成交额（元）与估算换手率；start/end为YYYY-MM-DD。全历史可用limit=20000；返回本地覆盖与截断标记。"""
+        if not 1<=limit<=20000:raise ValueError('limit须为1至20000')
+        return services.bars(symbol,date.fromisoformat(end) if end else None,limit,adjustment,date.fromisoformat(start) if start else None)
 
     @mcp.tool()
     def technical_screen(parameters:dict) -> dict:

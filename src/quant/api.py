@@ -58,8 +58,8 @@ def search(q:str='',limit:int=Query(30,ge=1,le=100)):return services.securities(
 
 
 @app.get('/api/bars/{symbol}')
-def get_bars(symbol:str,end:date|None=None,limit:int=Query(500,ge=1,le=5000),adjustment:str='qfq'):
-    return services.bars(symbol,end,limit,adjustment)
+def get_bars(symbol:str,end:date|None=None,start:date|None=None,limit:int=Query(500,ge=1,le=20000),adjustment:str='qfq'):
+    return services.bars(symbol,end,limit,adjustment,start)
 
 
 class ImportRequest(BaseModel):
