@@ -27,10 +27,11 @@ def test_qfq_mixed_actions_chronology_and_anchor():
 
 
 def test_breakout_uses_prior_bars_and_volume_excludes_today():
-    series=[{'trade_date':date(2020,1,1)+timedelta(days=i),'close':10,'high':11,'volume':100,'amount':1000} for i in range(60)]
+    series=[{'trade_date':date(2020,1,1)+timedelta(days=i),'close':10,'high':11,'low':9,'volume':100,'amount':1000} for i in range(60)]
     series[-1].update(close=12,high=13,volume=300)
     m=metrics(series)
     assert m['breakout'] and m['previous_high']==11 and m['volume_ratio_5d']==3
+    assert m['price_change']==2 and m['pct_change']==20
     assert reasons_for(m,ScreenRequest(require_breakout=True,min_volume_ratio=2))
     assert reasons_for(m,ScreenRequest(min_turnover=1)) is None
     assert metrics(series[:10]) is None

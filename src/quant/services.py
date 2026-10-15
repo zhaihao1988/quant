@@ -4,7 +4,7 @@ from decimal import Decimal
 from uuid import uuid4
 from psycopg.types.json import Jsonb
 from .db import connect
-from .domain import ScreenRequest, adjust_bars, metrics, reasons_for
+from .domain import ScreenRequest, adjust_bars, metrics, reasons_for, price_changes
 from .sessions import market_session
 
 
@@ -52,7 +52,7 @@ def bars(symbol, end=None, limit=500, adjustment='qfq'):
           FROM (SELECT * FROM daily_bar WHERE symbol=%s AND trade_date<=%s ORDER BY trade_date DESC LIMIT %s)b
           LEFT JOIN LATERAL(SELECT * FROM share_observation WHERE symbol=b.symbol AND effective_date<=b.trade_date
             ORDER BY effective_date DESC,CASE quality WHEN 'event' THEN 0 ELSE 1 END LIMIT 1)s ON true
-          ORDER BY b.trade_date''',(symbol,end,limit)).fetchall()
+          ORDER BY b.trade_date''',(symbol,end,limit+1)).fetchall()
         events=conn.execute('SELECT * FROM capital_event WHERE symbol=%s AND event_date<=%s ORDER BY event_date',(symbol,end)).fetchall()
     if not rows:
         return {'symbol':symbol,'bars':[],'adjustment':adjustment,'anchor':None}
@@ -62,9 +62,14 @@ def bars(symbol, end=None, limit=500, adjustment='qfq'):
         raise ValueError('所选区间含尚未支持的扩缩股事件；请选择不复权并单独核验')
     if adjustment=='qfq':
         rows=adjust_bars(rows,events,anchor)
+    previous=None
+    for row in rows:
+        row.update(price_changes(row,previous))
+        previous=row
+    rows=rows[-limit:]
     return clean({'symbol':symbol,'adjustment':adjustment,'anchor':anchor,'bars':rows,
                   'turnover_note':'按最近可用股本事件向后延续估算；当前快照不回填过去。历史事件覆盖可能不完整。',
-                  'price_note':'普通仿射前复权，与实际分红再投资收益不同；金额和成交量保持原始值'})
+                  'price_note':'普通仿射前复权，与实际分红再投资收益不同；涨跌额、涨跌幅、振幅基于所选价格口径的前一交易日收盘计算；金额和成交量保持原始值'})
 
 
 def screen(request: ScreenRequest):

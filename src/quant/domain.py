@@ -49,6 +49,13 @@ def adjust_bars(bars, events, anchor):
     return list(reversed(result))
 
 
+def price_changes(current, previous):
+    prior=float(previous['close']) if previous else 0
+    change=float(current['close'])-prior if previous else None
+    return {'price_change':change,'pct_change':100*change/prior if prior>0 else None,
+            'amplitude':100*(float(current['high'])-float(current['low']))/prior if prior>0 else None}
+
+
 def metrics(bars, window=20):
     if len(bars) < max(60,window+1):
         return None
@@ -60,7 +67,8 @@ def metrics(bars, window=20):
             'ma60':average('close',60), 'volume_ratio_5d': last['volume']/prior_vol if prior_vol else None,
             'amount':last['amount'], 'volume_shares':last['volume'],
             'previous_high':previous_high, 'breakout':float(last['close'])>previous_high,
-            'turnover_pct':last.get('turnover_pct'), 'turnover_source':last.get('turnover_source')}
+            'turnover_pct':last.get('turnover_pct'), 'turnover_source':last.get('turnover_source'),
+            **price_changes(last,bars[-2])}
 
 
 def reasons_for(m, request):
