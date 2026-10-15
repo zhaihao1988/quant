@@ -5,6 +5,7 @@ from uuid import uuid4
 from psycopg.types.json import Jsonb
 from .db import connect
 from .domain import ScreenRequest, adjust_bars, metrics, reasons_for
+from .sessions import market_session
 
 
 def clean(value):
@@ -15,12 +16,15 @@ def status():
     with connect() as conn:
         counts=conn.execute('''SELECT (SELECT count(*) FROM security) AS securities,
           (SELECT coalesce(sum(record_count),0) FROM import_file WHERE path LIKE '%.day') AS daily_records,
-          (SELECT max(latest_date) FROM import_file WHERE path LIKE '%.day') AS latest_trade_date,
+          (SELECT max(latest_date) FROM import_file WHERE path LIKE '%.day') AS latest_file_date,
           (SELECT count(*) FROM capital_event) AS capital_events,
           (SELECT count(*) FROM share_observation) AS share_observations,
           (SELECT count(*) FROM taxonomy) AS taxonomies,
           pg_database_size(current_database()) AS database_bytes''').fetchone()
         counts['imports']=conn.execute('SELECT * FROM import_run ORDER BY started_at DESC LIMIT 8').fetchall()
+        session=market_session(conn)
+        counts['latest_trade_date']=session['trade_date'] if session else None
+        counts['session_coverage']=session
         counts['source']='通达信本地；A股；成交量为股，成交额为元；股票池为采集日快照'
         counts['server_date']=date.today()
         counts['freshness']='请按交易日核对；应用不会自动启动通达信下载，也不以文件修改时间代表每项资料均最新'
@@ -37,8 +41,12 @@ def securities(query='', limit=30):
 def bars(symbol, end=None, limit=500, adjustment='qfq'):
     if adjustment not in ('raw','qfq'):
         raise ValueError('adjustment必须为raw或qfq')
-    end=end or date.today()
     with connect() as conn:
+        if end is None:
+            session=market_session(conn)
+            if not session:
+                raise ValueError('尚无覆盖充分的已收盘日线；如需查看盘中缓存，请显式指定截止日')
+            end=session['trade_date']
         rows=conn.execute('''SELECT b.*,s.float_shares,s.source AS turnover_source,s.quality AS share_quality,
             CASE WHEN s.float_shares>0 THEN 100.0*b.volume/s.float_shares END AS turnover_pct
           FROM (SELECT * FROM daily_bar WHERE symbol=%s AND trade_date<=%s ORDER BY trade_date DESC LIMIT %s)b
@@ -61,9 +69,10 @@ def bars(symbol, end=None, limit=500, adjustment='qfq'):
 
 def screen(request: ScreenRequest):
     with connect() as conn:
-        effective=conn.execute('SELECT max(trade_date) AS d FROM daily_bar WHERE trade_date<=%s',(request.as_of or date.today(),)).fetchone()['d']
-        if not effective:
-            raise ValueError('尚无可用行情，请先导入通达信数据')
+        session=market_session(conn,request.as_of)
+        if not session:
+            raise ValueError('尚无覆盖充分的已收盘日线，请先完成通达信下载与导入')
+        effective=session['trade_date']
         params=[effective,effective]
         clauses=[]
         if request.symbols:
@@ -105,7 +114,10 @@ def screen(request: ScreenRequest):
     result=clean({'id':run_id,'effective_date':effective,'adjustment':request.adjustment,'anchor':effective,
                   'scanned':len(by_symbol),'matched':len(results),'insufficient_history':insufficient,
                   'unsupported_corporate_actions':unsupported,'results':results[:request.limit],
+                  'session_coverage':session,
                   'note':'历史筛选只使用截至所选交易日的价格和事件；成分股历史仅限已采集快照。成交量倍数为日线指标，非盘中量比。'})
+    if session['partial']:
+        result['note']+=' 所选日期含盘中或低覆盖数据，请勿视为完整盘后扫描。'
     with connect() as conn:
         conn.execute('INSERT INTO screen_run(id,requested_date,effective_date,parameters,result) VALUES (%s,%s,%s,%s,%s)',
                      (run_id,request.as_of,effective,Jsonb(request.model_dump(mode='json')),Jsonb(result)))

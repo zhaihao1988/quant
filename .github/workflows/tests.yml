@@ -22,4 +22,5 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -e '.[dev]'
+      - run: mkdir -p .runtime
       - run: python -m pytest -q --basetemp=.runtime/pytest

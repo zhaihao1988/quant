@@ -40,3 +40,17 @@ def test_scope_and_validation():
     assert is_a_stock('SH','601318') and is_a_stock('SZ','300138') and is_a_stock('BJ','920001')
     assert not is_a_stock('SH','000001') and not is_a_stock('SH','510300')
     with pytest.raises(ValueError):ScreenRequest(min_turnover=5,max_turnover=1)
+
+
+def test_partial_today_does_not_hide_yesterday_universe():
+    from datetime import datetime
+    from quant.sessions import choose_session
+    rows=[{'trade_date':date(2026,10,14),'securities':5000},
+          {'trade_date':date(2026,10,15),'securities':2}]
+    now=datetime(2026,10,15,16,0)
+    assert choose_session(rows,now=now)['trade_date']==date(2026,10,14)
+    explicit=choose_session(rows,date(2026,10,15),now)
+    assert explicit['trade_date']==date(2026,10,15) and explicit['partial']
+    rows[1]['securities']=5000
+    assert choose_session(rows,now=datetime(2026,10,15,11,0))['trade_date']==date(2026,10,14)
+    assert choose_session(rows,now=now)['trade_date']==date(2026,10,15)
