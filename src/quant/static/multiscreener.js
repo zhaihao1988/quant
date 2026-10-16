@@ -96,7 +96,7 @@ function renderMultiSignals(){
  $('#multi-results').innerHTML='<p class="hint">财务数据只在实际采集并核验后可用；冲突报告隔离，缺失项显示原因。PE沿用年报口径，市值使用不复权价。同比比率0.10代表10%。点击列名排序，点击 ▾ 筛选。</p>'+`<div class="multi-filter-summary"><span>显示 ${rows.length} / ${multiSignals.length} 条信号 · ${new Set(rows.map(r=>r.symbol)).size} 只股票</span>${Object.keys(multiFilters).length?'<button type="button" id="multi-clear-filters">清除全部筛选</button>':''}</div><div class="table-wrap">`+table(multiColumns.map(c=>c[1]),rows.map(r=>multiColumns.map(c=>multiCell(r,c[0]))))+'</div>'+(rows.length?'':'<p class="hint">没有匹配结果，可清除筛选或放宽条件。</p>');
  $('#multi-results').classList.remove('empty');
  document.querySelectorAll('#multi-results th').forEach((th,i)=>{
-  const [key,label]=multiColumns[i];th.innerHTML=`<div class="multi-column-header"><button type="button" data-multi-sort="${esc(key)}">${esc(label)}${multiSort.key===key?(multiSort.ascending?' ↑':' ↓'):''}</button><button type="button" class="multi-column-filter ${multiFilters[key]?'active':''}" data-multi-filter="${esc(key)}" aria-label="筛选${esc(label)}" aria-haspopup="dialog" aria-expanded="${multiFilterOpen?.key===key}">${multiFilters[key]?'●':'▾'}</button></div>`;
+  const [key,label]=multiColumns[i];th.innerHTML=`<div class="multi-column-header"><button type="button" data-multi-sort="${esc(key)}">${esc(label)}${multiSort.key===key?(multiSort.ascending?' ↑':' ↓'):''}</button><button type="button" class="multi-column-filter ${multiFilters[key]?'active':''}" data-multi-filter="${esc(key)}" title="筛选${esc(label)}" aria-label="筛选${esc(label)}" aria-haspopup="dialog" aria-expanded="${multiFilterOpen?.key===key}"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="${multiFilters[key]?'M1 2h14L10 8v5l-4 2V8z':'M2 5h12L8 12z'}"/></svg></button></div>`;
   th.querySelector('[data-multi-sort]').onclick=()=>{closeMultiFilter();multiSort={key,ascending:multiSort.key===key?!multiSort.ascending:true};renderMultiSignals()};
   th.querySelector('[data-multi-filter]').onclick=()=>openMultiFilter(key);
  });
@@ -163,3 +163,8 @@ $('#multi-resume').onclick=async()=>{
  try{const r=await api('/multi-screens/'+multiTask+'/resume',{workers:Number($('#multi-workers').value)});multiStarting=false;await watchMulti(r.id)}
  catch(e){multiStarting=false;message(e.message);$('#multi-resume').disabled=false}
 };
+
+// A direct link can open the result table without starting another scan.
+if(new URLSearchParams(window.location.search).get('view')==='multi'){
+ document.addEventListener('DOMContentLoaded',()=>document.querySelector('[data-view="multi"]').click());
+}

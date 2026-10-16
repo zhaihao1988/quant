@@ -1,9 +1,10 @@
 import logging
+import hashlib
 from datetime import date
 from pathlib import Path
 from uuid import UUID
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
@@ -40,7 +41,12 @@ async def unexpected_error(request,exc):
 
 
 @app.get('/')
-def home():return FileResponse(static/'index.html')
+def home():
+    html=(static/'index.html').read_text(encoding='utf-8')
+    for name in ('style.css','app.js','sync.js','market.js','multiscreener.js'):
+        version=hashlib.sha256((static/name).read_bytes()).hexdigest()[:12]
+        html=html.replace(f'/static/{name}"',f'/static/{name}?v={version}"')
+    return HTMLResponse(html,headers={'Cache-Control':'no-cache'})
 
 
 @app.get('/api/health')
