@@ -1,8 +1,83 @@
 let multiTask=null,multiTimer=null,multiCatalog=null,multiStarting=false;
 let multiSignals=[],multiSort={key:null,ascending:true};
+let multiFilters={},multiFilterOpen=null;
 const multiColumns=[['symbol','证券'],['name','名称'],['signal_date','信号日期'],['strategy_label','策略'],['signal_level','级别'],['market_cap_formatted','市值'],['pe','PE'],['pb','PB'],['revenue_growth_yoy','营收同比（比率）'],['profit_growth_yoy','净利同比（比率）'],['peg_like_ratio','PEG类指标'],['net_profit_positive_3y_latest','连续3年及最新净利为正'],['growth_positive','增长为正'],['pe_lt_30','PE<30'],['peg_like_lt_1','PEG<1']];
 const multiBoolean=new Set(['net_profit_positive_3y_latest','growth_positive','pe_lt_30','peg_like_lt_1']);
 const multiMissing=v=>v===null||v===undefined||v===''||(typeof v==='number'&&Number.isNaN(v));
+const multiNumeric=new Set(['market_cap_formatted','pe','pb','revenue_growth_yoy','profit_growth_yoy','peg_like_ratio']);
+function multiToken(row,key){return multiMissing(row[key])?'missing:'+multiCell(row,key):JSON.stringify([typeof row[key],row[key]])}
+function multiMatches(row,key,filter){
+ if(filter.values&&!filter.values.has(multiToken(row,key)))return false;
+ if(filter.min!==null||filter.max!==null){
+  const value=row[key];
+  if(typeof value!=='number'||!Number.isFinite(value))return false;
+  if(filter.min!==null&&value<filter.min||filter.max!==null&&value>filter.max)return false;
+ }
+ return true;
+}
+function closeMultiFilter(focus=false){
+ const key=multiFilterOpen?.key;
+ document.querySelector('#multi-filter-menu')?.remove();multiFilterOpen=null;
+ const button=key&&document.querySelector(`[data-multi-filter="${key}"]`);
+ if(button){button.setAttribute('aria-expanded','false');if(focus)button.focus()}
+}
+function positionMultiFilter(){
+ const menu=$('#multi-filter-menu'),button=multiFilterOpen&&document.querySelector(`[data-multi-filter="${multiFilterOpen.key}"]`);
+ if(!menu||!button)return;
+ const rect=button.getBoundingClientRect();
+ menu.style.left=Math.max(8,Math.min(rect.right-menu.offsetWidth,window.innerWidth-menu.offsetWidth-8))+'px';
+ const below=window.innerHeight-rect.bottom-8;
+ menu.style.top=Math.max(8,below>=menu.offsetHeight?rect.bottom+4:rect.top-menu.offsetHeight-4)+'px';
+}
+function openMultiFilter(key){
+ if(multiFilterOpen?.key===key){closeMultiFilter(true);return}
+ closeMultiFilter();
+ const label=multiColumns.find(c=>c[0]===key)[1],filter=multiFilters[key];
+ // Other columns narrow the candidate list; retain this column's selected values so they can be cleared.
+ const options=new Map();
+ for(const row of multiSignals){
+  const token=multiToken(row,key);
+  if(Object.entries(multiFilters).every(([other,f])=>other===key||multiMatches(row,other,f))||filter?.values?.has(token)){
+   options.set(token,{token,label:multiCell(row,key),value:row[key]});
+  }
+ }
+ const choices=[...options.values()].sort((a,b)=>typeof a.value==='number'&&typeof b.value==='number'?a.value-b.value:a.label.localeCompare(b.label,'zh-CN',{numeric:true}));
+ const selected=new Set(filter?.values||choices.map(c=>c.token));
+ multiFilterOpen={key};
+ const menu=document.createElement('div');menu.id='multi-filter-menu';menu.className='multi-filter-menu';menu.setAttribute('role','dialog');menu.setAttribute('aria-label',label+'筛选');
+ menu.innerHTML=`<strong>${esc(label)}筛选</strong><div class="multi-filter-sort"><button type="button" data-filter-sort="asc">升序 ↑</button><button type="button" data-filter-sort="desc">降序 ↓</button></div><input type="search" data-filter-search aria-label="搜索筛选值" placeholder="搜索值…">`+
+  (multiNumeric.has(key)?`<div class="multi-filter-range"><label>最小值<input type="number" step="any" data-filter-min value="${esc(filter?.min??'')}"></label><label>最大值<input type="number" step="any" data-filter-max value="${esc(filter?.max??'')}"></label></div><small>${key==='market_cap_formatted'?'市值单位：元':key.includes('growth')?'同比为比率，0.10代表10%':'区间包含边界值'}</small>`:'')+
+  '<div class="multi-filter-select"><button type="button" data-filter-all>全选搜索结果</button><button type="button" data-filter-none>取消搜索结果</button></div><div class="multi-filter-values"></div><p class="multi-filter-error" role="alert"></p><div class="multi-filter-actions"><button type="button" data-filter-clear>清除此列</button><button type="button" data-filter-cancel>取消</button><button type="button" class="primary" data-filter-apply>确定</button></div>';
+ document.body.append(menu);
+ const visibleChoices=()=>{const term=menu.querySelector('[data-filter-search]').value.trim().toLocaleLowerCase();return choices.filter(c=>c.label.toLocaleLowerCase().includes(term))};
+ function renderChoices(){
+  const visible=visibleChoices();
+  menu.querySelector('.multi-filter-values').innerHTML=visible.length?visible.map(c=>`<label class="check"><input type="checkbox" value="${esc(c.token)}" ${selected.has(c.token)?'checked':''}><span>${esc(c.label)}</span></label>`).join(''):'<p class="hint">无匹配值</p>';
+  menu.querySelectorAll('input[type=checkbox]').forEach(input=>input.onchange=()=>{if(input.checked)selected.add(input.value);else selected.delete(input.value)});
+ }
+ menu.querySelector('[data-filter-search]').oninput=renderChoices;
+ menu.querySelector('[data-filter-all]').onclick=()=>{visibleChoices().forEach(c=>selected.add(c.token));renderChoices()};
+ menu.querySelector('[data-filter-none]').onclick=()=>{visibleChoices().forEach(c=>selected.delete(c.token));renderChoices()};
+ menu.querySelector('[data-filter-cancel]').onclick=()=>closeMultiFilter(true);
+ menu.querySelector('[data-filter-clear]').onclick=()=>{delete multiFilters[key];closeMultiFilter();renderMultiSignals()};
+ menu.querySelectorAll('[data-filter-sort]').forEach(button=>button.onclick=()=>{multiSort={key,ascending:button.dataset.filterSort==='asc'};closeMultiFilter();renderMultiSignals()});
+ menu.querySelector('[data-filter-apply]').onclick=()=>{
+  const low=menu.querySelector('[data-filter-min]'),high=menu.querySelector('[data-filter-max]');
+  if(low&&!low.validity.valid||high&&!high.validity.valid){menu.querySelector('.multi-filter-error').textContent='请输入有效数值';return}
+  const min=low?.value?Number(low.value):null,max=high?.value?Number(high.value):null;
+  if(min!==null&&max!==null&&min>max){menu.querySelector('.multi-filter-error').textContent='最小值不能大于最大值';return}
+  const applied=menu.querySelector('[data-filter-search]').value.trim()?new Set(visibleChoices().filter(c=>selected.has(c.token)).map(c=>c.token)):new Set(selected);
+  const values=choices.every(c=>applied.has(c.token))&&applied.size===choices.length?null:applied;
+  if(values===null&&min===null&&max===null)delete multiFilters[key];else multiFilters[key]={values,min,max};
+  closeMultiFilter();renderMultiSignals();
+ };
+ renderChoices();positionMultiFilter();
+ document.querySelector(`[data-multi-filter="${key}"]`).setAttribute('aria-expanded','true');menu.querySelector('[data-filter-search]').focus();
+}
+document.addEventListener('pointerdown',event=>{if(multiFilterOpen&&!event.target.closest('#multi-filter-menu,[data-multi-filter]'))closeMultiFilter()});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&multiFilterOpen){event.preventDefault();closeMultiFilter(true)}});
+window.addEventListener('resize',positionMultiFilter);
+document.addEventListener('scroll',event=>{if(multiFilterOpen&&!$('#multi-filter-menu')?.contains(event.target))positionMultiFilter()},true);
 function multiCell(row,key){
  const value=row[key];
  if(multiMissing(value))return ['symbol','name','signal_date','strategy_label','signal_level'].includes(key)?'—':(row.fundamental_labels?.[key]||'未接入');
@@ -11,19 +86,22 @@ function multiCell(row,key){
  return typeof value==='number'?num(value):String(value);
 }
 function renderMultiSignals(){
- const rows=[...multiSignals];
+ const rows=multiSignals.filter(row=>Object.entries(multiFilters).every(([key,f])=>multiMatches(row,key,f)));
  if(multiSort.key)rows.sort((a,b)=>{
   const x=a[multiSort.key],y=b[multiSort.key];
   if(multiMissing(x)||multiMissing(y))return multiMissing(x)?(multiMissing(y)?0:1):-1;
   const comparison=typeof x==='number'&&typeof y==='number'?x-y:typeof x==='boolean'&&typeof y==='boolean'?Number(x)-Number(y):String(x).localeCompare(String(y),'zh-CN',{numeric:true});
   return multiSort.ascending?comparison:-comparison;
  });
- $('#multi-results').innerHTML='<p class="hint">财务数据只在实际采集并核验后可用；冲突报告隔离，缺失项显示原因。PE沿用年报口径，市值使用不复权价。同比比率0.10代表10%。点击列名排序。</p><div class="table-wrap">'+table(multiColumns.map(c=>c[1]),rows.map(r=>multiColumns.map(c=>multiCell(r,c[0]))))+'</div>';
+ $('#multi-results').innerHTML='<p class="hint">财务数据只在实际采集并核验后可用；冲突报告隔离，缺失项显示原因。PE沿用年报口径，市值使用不复权价。同比比率0.10代表10%。点击列名排序，点击 ▾ 筛选。</p>'+`<div class="multi-filter-summary"><span>显示 ${rows.length} / ${multiSignals.length} 条信号 · ${new Set(rows.map(r=>r.symbol)).size} 只股票</span>${Object.keys(multiFilters).length?'<button type="button" id="multi-clear-filters">清除全部筛选</button>':''}</div><div class="table-wrap">`+table(multiColumns.map(c=>c[1]),rows.map(r=>multiColumns.map(c=>multiCell(r,c[0]))))+'</div>'+(rows.length?'':'<p class="hint">没有匹配结果，可清除筛选或放宽条件。</p>');
  $('#multi-results').classList.remove('empty');
  document.querySelectorAll('#multi-results th').forEach((th,i)=>{
-  const [key,label]=multiColumns[i];th.innerHTML=`<button type="button" data-multi-sort="${esc(key)}">${esc(label)}${multiSort.key===key?(multiSort.ascending?' ↑':' ↓'):''}</button>`;
-  th.querySelector('button').onclick=()=>{multiSort={key,ascending:multiSort.key===key?!multiSort.ascending:true};renderMultiSignals()};
+  const [key,label]=multiColumns[i];th.innerHTML=`<div class="multi-column-header"><button type="button" data-multi-sort="${esc(key)}">${esc(label)}${multiSort.key===key?(multiSort.ascending?' ↑':' ↓'):''}</button><button type="button" class="multi-column-filter ${multiFilters[key]?'active':''}" data-multi-filter="${esc(key)}" aria-label="筛选${esc(label)}" aria-haspopup="dialog" aria-expanded="${multiFilterOpen?.key===key}">${multiFilters[key]?'●':'▾'}</button></div>`;
+  th.querySelector('[data-multi-sort]').onclick=()=>{closeMultiFilter();multiSort={key,ascending:multiSort.key===key?!multiSort.ascending:true};renderMultiSignals()};
+  th.querySelector('[data-multi-filter]').onclick=()=>openMultiFilter(key);
  });
+ $('#multi-clear-filters')?.addEventListener('click',()=>{closeMultiFilter();multiFilters={};renderMultiSignals()});
+ positionMultiFilter();
 }
 const multiState={queued:'排队中',running:'运行中',completed:'已完成',partial:'完成，存在数据或执行问题',cancelled:'已停止',interrupted:'服务中断，请重新运行',failed:'失败'};
 async function loadMulti(){
@@ -41,6 +119,7 @@ async function loadMulti(){
  }catch(e){message(e.message)}
 }
 async function watchMulti(id){
+ if(multiTask!==id){closeMultiFilter();multiFilters={}}
  multiTask=id;clearTimeout(multiTimer);
  try{
   const r=await api('/multi-screens/'+id);if(multiTask!==id||multiStarting)return;
