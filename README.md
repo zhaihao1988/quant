@@ -54,7 +54,7 @@ cd D:\projects\quant
 }
 ```
 
-需先启动数据库。stdio工具清单：`data_status`、`search_securities`、`daily_bars`、`technical_screen`、`list_stock_pools`、`industry_graph`、`analyze_news`。不提供任意SQL执行或交易下单工具。
+需先启动数据库。stdio工具清单：`data_status`、`search_securities`、`daily_bars`、`technical_screen`、`list_stock_pools`、`industry_graph`、`analyze_news`、`multi_strategy_catalog`、`start_multi_screen`、`multi_screen_status`、`financial_data_status`、`financial_reports`、`stock_fundamentals`。不提供任意SQL执行或交易下单工具。
 
 ## 数据与计算口径
 
@@ -72,11 +72,11 @@ cd D:\projects\quant
 
 ## 与旧项目的关系
 
-本地行情接入、持久化与接口独立实现。原有组合条件选股继续保留；另按用户要求原样移植 `zhaihao1988/quant_platform` 的 MultiStrategyScreener 七个技术策略，公共接口作最小适配，不引入旧ORM和外部数据供应商。多策略使用全部历史、通达信前复权及成交量手，周月输入按旧聚合规则重建；基本面暂未接入。网页“多策略选股”可选择策略、股票池、指定股票和截止日，默认4进程并行，显示进度和错误，停止后可保留已完成结果并继续剩余股票。结果表按旧项目列出基本面字段，缺失显示“未接入”，支持排序，技术详情仍保存在数据库但不在结果表展开。规则、测速、验证和MCP接口见 [docs/multiscreener-migration-review.md](docs/multiscreener-migration-review.md)；最初的旧代码分析见 [docs/migration-review.md](docs/migration-review.md)。
+本地行情接入、持久化与接口独立实现。原有组合条件选股继续保留；另按用户要求原样移植 `zhaihao1988/quant_platform` 的 MultiStrategyScreener 七个技术策略，公共接口作最小适配，不引入旧ORM和外部数据供应商。多策略使用全部历史、通达信前复权及成交量手，周月输入按旧聚合规则重建；基本面已接入通达信专业财务包，见 [财务数据说明](docs/financial-data.md)。网页“多策略选股”可选择策略、股票池、指定股票和截止日，默认4进程并行，显示进度和错误，停止后可保留已完成结果并继续剩余股票。结果表按旧项目列出基本面字段，缺失显示具体原因，支持排序，技术详情仍保存在数据库但不在结果表展开。规则、测速、验证和MCP接口见 [docs/multiscreener-migration-review.md](docs/multiscreener-migration-review.md)；最初的旧代码分析见 [docs/migration-review.md](docs/migration-review.md)。
 
 ## 尚未完成
 
-- 港美股、分钟线、专业财务包导入；它们不因目录存在就自动视为可用。
+- 港美股、分钟线导入；它们不因目录存在就自动视为可用。
 - 自动新闻源、大模型分析、产品及上下游关系建设、配套Skill。
 - 历史指数成分回补、首发版财务数据、完整交易日历、总回报回测、交易执行。
 - 图谱当前仅分类归属；手动新闻为名称规则匹配，不能解读成真实产业受益结论。

@@ -11,6 +11,8 @@ def main():
     imp=sub.add_parser('import-tdx');imp.add_argument('--symbols',nargs='*')
     imp.add_argument('--verify',action='store_true',help='校验所有源文件哈希，即使修改标记未变化')
     sub.add_parser('status')
+    financial=sub.add_parser('import-financials');financial.add_argument('--directory')
+    sub.add_parser('audit-financials')
     sub.add_parser('serve')
     mcp=sub.add_parser('mcp');mcp.add_argument('--transport',choices=['stdio','streamable-http'],default='stdio')
     args=parser.parse_args()
@@ -26,6 +28,14 @@ def main():
         with connect() as conn:row=conn.execute('SELECT * FROM import_run WHERE id=%s',(run_id,)).fetchone()
         print(json.dumps(row,default=str,ensure_ascii=False))
         if row['status']!='completed':raise SystemExit(1)
+    elif args.command=='import-financials':
+        from .financial_ingest import import_financials
+        result=import_financials(args.directory)
+        print(json.dumps(result,default=str,ensure_ascii=False,indent=2))
+        if result['status']!='completed':raise SystemExit(1)
+    elif args.command=='audit-financials':
+        from .financial_review import quarantine_existing
+        print(json.dumps(quarantine_existing(),ensure_ascii=False,indent=2))
     elif args.command=='status':
         from .services import status
         print(json.dumps(status(),ensure_ascii=False,indent=2))

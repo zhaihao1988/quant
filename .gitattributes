@@ -1,3 +1,6 @@
 # Keep user-designed source snapshots byte-identical across Windows and Linux.
 reference/multiscreener/** -text
 src/quant/legacy_strategies/*.py -text
+
+# Applied migrations are checked byte-for-byte; do not rewrite line endings.
+src/quant/migrations/*.sql -text

@@ -48,7 +48,7 @@ def create_server():
 
     @mcp.tool()
     def start_multi_screen(parameters:dict) -> dict:
-        """后台运行原多策略选股；as_of、symbols(如300138.SZ)、taxonomy_id、strategies(类名列表)、workers(1至4，默认4进程)。返回任务ID，用multi_screen_status查询。各策略独立汇总，不取交集；基本面未接入。"""
+        """后台运行原多策略选股；as_of、symbols(如300138.SZ)、taxonomy_id、strategies(类名列表)、workers(1至4，默认4进程)。返回任务ID，用multi_screen_status查询。各策略独立汇总，不取交集；基本面按实际采集可见日期附加。"""
         from threading import Thread
         from .multiscreener import MultiScreenRequest
         from .multi_jobs import reserve,run_job
@@ -73,5 +73,23 @@ def create_server():
         """保存手动新闻并按本地实体名称匹配股票，输出技术指标；当前为规则关联，不调用外部AI。"""
         if not title.strip() or len(title)>500 or len(content)>100000:raise ValueError('新闻长度无效')
         return services.analyze_news(title,content,source_url)
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def financial_data_status() -> dict:
+        """查询专业财务包覆盖、采集记录和隔离报告数量。"""
+        from .financial_service import financial_status
+        return financial_status()
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def financial_reports(symbol:str,limit:int=12,field_ids:list[int]|None=None) -> dict:
+        """查看当前下载版财报、原始FN字段、单位和企业类型。隔离报告仅供核验，不用于指标；不代表历史当时可见版本。"""
+        from .financial_service import reports
+        return reports(symbol,limit,field_ids)
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def stock_fundamentals(symbol:str,as_of:str|None=None) -> dict:
+        """查询市值、年报PE、PB、同比和PEG类指标。只使用截至该日实际采集核验的数据；市值不复权。"""
+        from .fundamentals import load_inputs
+        return load_inputs(symbol,date.fromisoformat(as_of) if as_of else date.today())
 
     return mcp

@@ -5,7 +5,7 @@ const multiBoolean=new Set(['net_profit_positive_3y_latest','growth_positive','p
 const multiMissing=v=>v===null||v===undefined||v===''||(typeof v==='number'&&Number.isNaN(v));
 function multiCell(row,key){
  const value=row[key];
- if(multiMissing(value))return ['symbol','name','signal_date','strategy_label','signal_level'].includes(key)?'—':'未接入';
+ if(multiMissing(value))return ['symbol','name','signal_date','strategy_label','signal_level'].includes(key)?'—':(row.fundamental_labels?.[key]||'未接入');
  if(multiBoolean.has(key))return value===true?'是':value===false?'否':String(value);
  if(key==='market_cap_formatted'&&typeof value==='number')return Math.abs(value)>=1e8?num(value/1e8)+'亿':Math.abs(value)>=1e4?num(value/1e4)+'万':num(value);
  return typeof value==='number'?num(value):String(value);
@@ -18,7 +18,7 @@ function renderMultiSignals(){
   const comparison=typeof x==='number'&&typeof y==='number'?x-y:typeof x==='boolean'&&typeof y==='boolean'?Number(x)-Number(y):String(x).localeCompare(String(y),'zh-CN',{numeric:true});
   return multiSort.ascending?comparison:-comparison;
  });
- $('#multi-results').innerHTML='<p class="hint">沿用旧项目基本面列；当前未接入财务数据，缺失项不填零。同比保持原代码比率值（0.10代表10%）。点击列名排序。</p><div class="table-wrap">'+table(multiColumns.map(c=>c[1]),rows.map(r=>multiColumns.map(c=>multiCell(r,c[0]))))+'</div>';
+ $('#multi-results').innerHTML='<p class="hint">财务数据只在实际采集并核验后可用；冲突报告隔离，缺失项显示原因。PE沿用年报口径，市值使用不复权价。同比比率0.10代表10%。点击列名排序。</p><div class="table-wrap">'+table(multiColumns.map(c=>c[1]),rows.map(r=>multiColumns.map(c=>multiCell(r,c[0]))))+'</div>';
  $('#multi-results').classList.remove('empty');
  document.querySelectorAll('#multi-results th').forEach((th,i)=>{
   const [key,label]=multiColumns[i];th.innerHTML=`<button type="button" data-multi-sort="${esc(key)}">${esc(label)}${multiSort.key===key?(multiSort.ascending?' ↑':' ↓'):''}</button>`;

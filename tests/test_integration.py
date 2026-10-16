@@ -76,7 +76,7 @@ def test_mcp_tools_registered(isolated_db):
     import asyncio
     from quant.mcp_server import create_server
     tools=asyncio.run(create_server().list_tools())
-    assert {t.name for t in tools}=={'data_status','search_securities','daily_bars','technical_screen','list_stock_pools','industry_graph','analyze_news','multi_strategy_catalog','start_multi_screen','multi_screen_status'}
+    assert {t.name for t in tools}=={'data_status','search_securities','daily_bars','technical_screen','list_stock_pools','industry_graph','analyze_news','multi_strategy_catalog','start_multi_screen','multi_screen_status','financial_data_status','financial_reports','stock_fundamentals'}
 
 
 def test_actual_mcp_stdio_handshake(isolated_db):
@@ -91,7 +91,7 @@ def test_actual_mcp_stdio_handshake(isolated_db):
             async with ClientSession(reader,writer) as session:
                 await session.initialize()
                 tools=await session.list_tools()
-                assert len(tools.tools)==10
+                assert len(tools.tools)==13
                 result=await session.call_tool('search_securities',{'query':'300138'})
                 assert not result.isError
                 assert '300138.SZ' in json.dumps(result.model_dump(mode='json'))

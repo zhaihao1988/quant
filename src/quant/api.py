@@ -53,6 +53,12 @@ def health():
 def get_status():return services.status()
 
 
+@app.get('/api/fundamentals/{symbol}')
+def get_fundamentals(symbol:str,as_of:date|None=None):
+    from .fundamentals import metrics_many
+    return metrics_many([symbol],as_of or date.today())[symbol]
+
+
 @app.get('/api/securities')
 def search(q:str='',limit:int=Query(30,ge=1,le=100)):return services.securities(q,limit)
 
@@ -123,6 +129,20 @@ def run_screen(body:ScreenRequest):return services.screen(body)
 
 @app.get('/api/taxonomies')
 def get_taxonomies():return services.taxonomies()
+
+
+@app.get('/api/financials/status')
+def financial_status():
+    from .financial_service import financial_status
+    return financial_status()
+
+
+@app.get('/api/financials/{symbol}')
+def financial_reports(symbol:str,limit:int=Query(12,ge=1,le=200),fields:str=''):
+    from .financial_service import reports
+    try:ids=[int(v.strip().upper().removeprefix('FN')) for v in fields.split(',') if v.strip()]
+    except ValueError:raise ValueError('财务字段须为逗号分隔的FN编号')
+    return reports(symbol,limit,ids)
 
 
 from .multiscreener import MultiScreenRequest, strategy_catalog

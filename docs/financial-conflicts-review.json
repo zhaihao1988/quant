@@ -1,0 +1,757 @@
+{
+  "summary": {
+    "records": 303561,
+    "securities": 5572,
+    "first_period": "1989-12-31",
+    "last_period": "2026-06-30"
+  },
+  "duplicate_groups": 88,
+  "identical_groups": 55,
+  "conflict_fields": [
+    {
+      "code": "300110",
+      "name": "华仁药业",
+      "period": "2016-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 145752,
+          "source_ordinal": 1424,
+          "raw_value": 28.829999923706055
+        },
+        {
+          "report_id": 145753,
+          "source_ordinal": 1425,
+          "raw_value": 41.18000030517578
+        }
+      ]
+    },
+    {
+      "code": "300750",
+      "name": "宁德时代",
+      "period": "2023-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 245421,
+          "source_ordinal": 2193,
+          "raw_value": 20.0
+        },
+        {
+          "report_id": 245422,
+          "source_ordinal": 2194,
+          "raw_value": 30.0
+        }
+      ]
+    },
+    {
+      "code": "300750",
+      "name": "宁德时代",
+      "period": "2025-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 289061,
+          "source_ordinal": 2192,
+          "raw_value": 13.670000076293945
+        },
+        {
+          "report_id": 289062,
+          "source_ordinal": 2193,
+          "raw_value": 30.0
+        }
+      ]
+    },
+    {
+      "code": "600007",
+      "name": "中国国贸",
+      "period": "2023-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 246139,
+          "source_ordinal": 2911,
+          "raw_value": 64.0
+        },
+        {
+          "report_id": 246140,
+          "source_ordinal": 2912,
+          "raw_value": 40.0
+        }
+      ]
+    },
+    {
+      "code": "600075",
+      "name": "新疆天业",
+      "period": "2010-12-31",
+      "field": 359,
+      "field_name": "主营业务收入（外销）",
+      "candidates": [
+        {
+          "report_id": 127503,
+          "source_ordinal": 1490,
+          "raw_value": 106645.5078125
+        },
+        {
+          "report_id": 127504,
+          "source_ordinal": 1491,
+          "raw_value": 72122.671875
+        }
+      ]
+    },
+    {
+      "code": "600075",
+      "name": "新疆天业",
+      "period": "2011-12-31",
+      "field": 359,
+      "field_name": "主营业务收入（外销）",
+      "candidates": [
+        {
+          "report_id": 129872,
+          "source_ordinal": 1546,
+          "raw_value": 143866.484375
+        },
+        {
+          "report_id": 129873,
+          "source_ordinal": 1547,
+          "raw_value": 79767.9375
+        }
+      ]
+    },
+    {
+      "code": "600075",
+      "name": "新疆天业",
+      "period": "2012-06-30",
+      "field": 359,
+      "field_name": "主营业务收入（外销）",
+      "candidates": [
+        {
+          "report_id": 132191,
+          "source_ordinal": 1446,
+          "raw_value": 62419.80859375
+        },
+        {
+          "report_id": 132192,
+          "source_ordinal": 1447,
+          "raw_value": 40817.9296875
+        }
+      ]
+    },
+    {
+      "code": "600075",
+      "name": "新疆天业",
+      "period": "2012-12-31",
+      "field": 358,
+      "field_name": "主营业务收入（内销）",
+      "candidates": [
+        {
+          "report_id": 134654,
+          "source_ordinal": 1659,
+          "raw_value": 303607.625
+        },
+        {
+          "report_id": 134655,
+          "source_ordinal": 1660,
+          "raw_value": 303607.625
+        },
+        {
+          "report_id": 134656,
+          "source_ordinal": 1661,
+          "raw_value": 166475.9375
+        },
+        {
+          "report_id": 134657,
+          "source_ordinal": 1662,
+          "raw_value": 166475.9375
+        }
+      ]
+    },
+    {
+      "code": "600075",
+      "name": "新疆天业",
+      "period": "2012-12-31",
+      "field": 359,
+      "field_name": "主营业务收入（外销）",
+      "candidates": [
+        {
+          "report_id": 134654,
+          "source_ordinal": 1659,
+          "raw_value": 137131.6875
+        },
+        {
+          "report_id": 134655,
+          "source_ordinal": 1660,
+          "raw_value": 89058.640625
+        },
+        {
+          "report_id": 134656,
+          "source_ordinal": 1661,
+          "raw_value": 137131.6875
+        },
+        {
+          "report_id": 134657,
+          "source_ordinal": 1662,
+          "raw_value": 89058.640625
+        }
+      ]
+    },
+    {
+      "code": "600075",
+      "name": "新疆天业",
+      "period": "2014-12-31",
+      "field": 359,
+      "field_name": "主营业务收入（外销）",
+      "candidates": [
+        {
+          "report_id": 137603,
+          "source_ordinal": 2007,
+          "raw_value": 51162.75
+        },
+        {
+          "report_id": 137604,
+          "source_ordinal": 2008,
+          "raw_value": 122063.4375
+        }
+      ]
+    },
+    {
+      "code": "600075",
+      "name": "新疆天业",
+      "period": "2015-06-30",
+      "field": 359,
+      "field_name": "主营业务收入（外销）",
+      "candidates": [
+        {
+          "report_id": 140515,
+          "source_ordinal": 1652,
+          "raw_value": 9782.0302734375
+        },
+        {
+          "report_id": 140516,
+          "source_ordinal": 1653,
+          "raw_value": 6732.72998046875
+        }
+      ]
+    },
+    {
+      "code": "600075",
+      "name": "新疆天业",
+      "period": "2016-06-30",
+      "field": 358,
+      "field_name": "主营业务收入（内销）",
+      "candidates": [
+        {
+          "report_id": 143258,
+          "source_ordinal": 1809,
+          "raw_value": 212983.875
+        },
+        {
+          "report_id": 143259,
+          "source_ordinal": 1810,
+          "raw_value": 212983.875
+        },
+        {
+          "report_id": 143260,
+          "source_ordinal": 1811,
+          "raw_value": 171301.4375
+        },
+        {
+          "report_id": 143261,
+          "source_ordinal": 1812,
+          "raw_value": 171301.4375
+        }
+      ]
+    },
+    {
+      "code": "600075",
+      "name": "新疆天业",
+      "period": "2016-06-30",
+      "field": 359,
+      "field_name": "主营业务收入（外销）",
+      "candidates": [
+        {
+          "report_id": 143258,
+          "source_ordinal": 1809,
+          "raw_value": 41682.421875
+        },
+        {
+          "report_id": 143259,
+          "source_ordinal": 1810,
+          "raw_value": 59454.8203125
+        },
+        {
+          "report_id": 143260,
+          "source_ordinal": 1811,
+          "raw_value": 41682.421875
+        },
+        {
+          "report_id": 143261,
+          "source_ordinal": 1812,
+          "raw_value": 59454.8203125
+        }
+      ]
+    },
+    {
+      "code": "600188",
+      "name": "兖矿能源",
+      "period": "2005-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 121696,
+          "source_ordinal": 812,
+          "raw_value": 13.800000190734863
+        },
+        {
+          "report_id": 121697,
+          "source_ordinal": 813,
+          "raw_value": 29.559999465942383
+        }
+      ]
+    },
+    {
+      "code": "600188",
+      "name": "兖矿能源",
+      "period": "2006-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 123254,
+          "source_ordinal": 944,
+          "raw_value": 21.360000610351562
+        },
+        {
+          "report_id": 123255,
+          "source_ordinal": 945,
+          "raw_value": 32.040000915527344
+        }
+      ]
+    },
+    {
+      "code": "600188",
+      "name": "兖矿能源",
+      "period": "2020-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 185057,
+          "source_ordinal": 3023,
+          "raw_value": 27.3799991607666
+        },
+        {
+          "report_id": 185058,
+          "source_ordinal": 3024,
+          "raw_value": 41.06999969482422
+        }
+      ]
+    },
+    {
+      "code": "600188",
+      "name": "兖矿能源",
+      "period": "2021-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 204428,
+          "source_ordinal": 3026,
+          "raw_value": 48.70000076293945
+        },
+        {
+          "report_id": 204429,
+          "source_ordinal": 3027,
+          "raw_value": 12.170000076293945
+        }
+      ]
+    },
+    {
+      "code": "600188",
+      "name": "兖矿能源",
+      "period": "2022-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 224934,
+          "source_ordinal": 3048,
+          "raw_value": 18.290000915527344
+        },
+        {
+          "report_id": 224935,
+          "source_ordinal": 3049,
+          "raw_value": 45.65999984741211
+        }
+      ]
+    },
+    {
+      "code": "600600",
+      "name": "青岛啤酒",
+      "period": "2002-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 120609,
+          "source_ordinal": 901,
+          "raw_value": 69.37000274658203
+        },
+        {
+          "report_id": 120610,
+          "source_ordinal": 902,
+          "raw_value": 26.010000228881836
+        }
+      ]
+    },
+    {
+      "code": "600600",
+      "name": "青岛啤酒",
+      "period": "2008-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 125623,
+          "source_ordinal": 1741,
+          "raw_value": 5.610000133514404
+        },
+        {
+          "report_id": 125624,
+          "source_ordinal": 1742,
+          "raw_value": 41.13999938964844
+        }
+      ]
+    },
+    {
+      "code": "600600",
+      "name": "青岛啤酒",
+      "period": "2022-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 225237,
+          "source_ordinal": 3351,
+          "raw_value": 18.3799991607666
+        },
+        {
+          "report_id": 225238,
+          "source_ordinal": 3352,
+          "raw_value": 47.79999923706055
+        }
+      ]
+    },
+    {
+      "code": "600803",
+      "name": "新奥股份",
+      "period": "2023-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 246746,
+          "source_ordinal": 3518,
+          "raw_value": 10.869999885559082
+        },
+        {
+          "report_id": 246747,
+          "source_ordinal": 3519,
+          "raw_value": 28.68000030517578
+        }
+      ]
+    },
+    {
+      "code": "600803",
+      "name": "新奥股份",
+      "period": "2024-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 268391,
+          "source_ordinal": 3516,
+          "raw_value": 55.720001220703125
+        },
+        {
+          "report_id": 268392,
+          "source_ordinal": 3517,
+          "raw_value": 15.130000114440918
+        }
+      ]
+    },
+    {
+      "code": "601600",
+      "name": "中国铝业",
+      "period": "2006-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 123855,
+          "source_ordinal": 1545,
+          "raw_value": 12.510000228881836
+        },
+        {
+          "report_id": 123856,
+          "source_ordinal": 1546,
+          "raw_value": 1.409999966621399
+        }
+      ]
+    },
+    {
+      "code": "601601",
+      "name": "中国太保",
+      "period": "2020-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 185790,
+          "source_ordinal": 3756,
+          "raw_value": 3.9100000858306885
+        },
+        {
+          "report_id": 185791,
+          "source_ordinal": 3757,
+          "raw_value": 46.959999084472656
+        }
+      ]
+    },
+    {
+      "code": "601808",
+      "name": "中海油服",
+      "period": "2021-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 205202,
+          "source_ordinal": 3800,
+          "raw_value": 30.469999313354492
+        },
+        {
+          "report_id": 205203,
+          "source_ordinal": 3801,
+          "raw_value": 198.07000732421875
+        }
+      ]
+    },
+    {
+      "code": "601857",
+      "name": "中国石油",
+      "period": "2016-06-30",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 144055,
+          "source_ordinal": 2606,
+          "raw_value": 45.40999984741211
+        },
+        {
+          "report_id": 144056,
+          "source_ordinal": 2607,
+          "raw_value": 693.260009765625
+        }
+      ]
+    },
+    {
+      "code": "601857",
+      "name": "中国石油",
+      "period": "2016-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 147428,
+          "source_ordinal": 3100,
+          "raw_value": 41.720001220703125
+        },
+        {
+          "report_id": 147429,
+          "source_ordinal": 3101,
+          "raw_value": 46.33000183105469
+        }
+      ]
+    },
+    {
+      "code": "601857",
+      "name": "中国石油",
+      "period": "2017-06-30",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 150967,
+          "source_ordinal": 2812,
+          "raw_value": 55.0
+        },
+        {
+          "report_id": 150968,
+          "source_ordinal": 2813,
+          "raw_value": 45.0099983215332
+        }
+      ]
+    },
+    {
+      "code": "601857",
+      "name": "中国石油",
+      "period": "2017-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 154912,
+          "source_ordinal": 3500,
+          "raw_value": 19.989999771118164
+        },
+        {
+          "report_id": 154913,
+          "source_ordinal": 3501,
+          "raw_value": 28.790000915527344
+        }
+      ]
+    },
+    {
+      "code": "601857",
+      "name": "中国石油",
+      "period": "2018-06-30",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 158882,
+          "source_ordinal": 2873,
+          "raw_value": 14.8100004196167
+        },
+        {
+          "report_id": 158883,
+          "source_ordinal": 2874,
+          "raw_value": 44.41999816894531
+        }
+      ]
+    },
+    {
+      "code": "601857",
+      "name": "中国石油",
+      "period": "2018-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 163077,
+          "source_ordinal": 3703,
+          "raw_value": 21.639999389648438
+        },
+        {
+          "report_id": 163078,
+          "source_ordinal": 3704,
+          "raw_value": 9.420000076293945
+        }
+      ]
+    },
+    {
+      "code": "601857",
+      "name": "中国石油",
+      "period": "2019-06-30",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 167431,
+          "source_ordinal": 3045,
+          "raw_value": 45.0
+        },
+        {
+          "report_id": 167432,
+          "source_ordinal": 3046,
+          "raw_value": 5.0
+        }
+      ]
+    },
+    {
+      "code": "601857",
+      "name": "中国石油",
+      "period": "2019-12-31",
+      "field": 337,
+      "field_name": "股利支付率",
+      "candidates": [
+        {
+          "report_id": 171903,
+          "source_ordinal": 3780,
+          "raw_value": 17.0
+        },
+        {
+          "report_id": 171904,
+          "source_ordinal": 3781,
+          "raw_value": 9.449999809265137
+        }
+      ]
+    },
+    {
+      "code": "920163",
+      "name": "方大新材",
+      "period": "2020-06-30",
+      "field": 358,
+      "field_name": "主营业务收入（内销）",
+      "candidates": [
+        {
+          "report_id": 177898,
+          "source_ordinal": 4470,
+          "raw_value": 2032.2099609375
+        },
+        {
+          "report_id": 177899,
+          "source_ordinal": 4471,
+          "raw_value": 2032.2099609375
+        },
+        {
+          "report_id": 177900,
+          "source_ordinal": 4472,
+          "raw_value": 1981.9599609375
+        },
+        {
+          "report_id": 177901,
+          "source_ordinal": 4473,
+          "raw_value": 1981.9599609375
+        }
+      ]
+    },
+    {
+      "code": "920163",
+      "name": "方大新材",
+      "period": "2020-06-30",
+      "field": 359,
+      "field_name": "主营业务收入（外销）",
+      "candidates": [
+        {
+          "report_id": 177898,
+          "source_ordinal": 4470,
+          "raw_value": 10274.5
+        },
+        {
+          "report_id": 177899,
+          "source_ordinal": 4471,
+          "raw_value": 10250.23046875
+        },
+        {
+          "report_id": 177900,
+          "source_ordinal": 4472,
+          "raw_value": 10274.5
+        },
+        {
+          "report_id": 177901,
+          "source_ordinal": 4473,
+          "raw_value": 10250.23046875
+        }
+      ]
+    }
+  ],
+  "policy": "Only listing source candidates. No duplicate selected, merged, approved, or used in financial screening."
+}
