@@ -45,12 +45,17 @@ def main():
         job=client.get('/api/multi-screens/c55ce989-a78e-4eff-a6dd-a745aab9b835');job.raise_for_status();job=job.json()
         snapshot_seconds=round(time.perf_counter()-start_snapshot,3)
         signals=job['result']['signals']
-        assert job['processed']==5594 and all(s['pe'] is None for s in signals)
+        assert job['processed']==5594 and any(s['pe'] is not None for s in signals)
+        assert all(s['fundamental_reference']=='latest_collected' and s['financial_reference_date']=='2026-10-16' for s in signals)
+        assert all(s['technical_as_of']=='2026-10-14' and s['signal_date']=='2026-10-14' for s in signals)
+        assert all(s['shares_source']=='tdx_base_versioned' for s in signals)
+        refresh=client.get('/api/fundamental-refresh');refresh.raise_for_status();refresh=refresh.json()
+        assert refresh['status']=='completed' and refresh['processed']==5594 and not refresh['errors']
     with connect() as conn:
         fingerprint=conn.execute('SELECT count(*) AS n,md5(string_agg(md5(result::text),%s ORDER BY ordinal)) AS digest FROM multi_screen_item WHERE run_id=%s',('', 'c55ce989-a78e-4eff-a6dd-a745aab9b835')).fetchone()
         assert fingerprint==json.loads(Path('artifacts/finance-upgrade-checkpoint.json').read_text())
         assert conn.execute("SELECT count(*) AS n FROM financial_report WHERE review_state='pending_conflict' AND standard<>'{}'::jsonb").fetchone()['n']==0
-    result={'coverage':{k:status[k] for k in ('stored_report_versions','covered_securities','latest_report_date','quarantined_source_records')},'samples':samples,'old_task':{'processed':job['processed'],'signals':len(signals),'all_pe_unavailable_before_collection':True,'fingerprint_unchanged':fingerprint,'snapshot_seconds':snapshot_seconds,'errors':len(job['result']['errors'])},'mcp':asyncio.run(mcp_check()),'seconds':round(time.perf_counter()-start,3)}
+    result={'coverage':{k:status[k] for k in ('stored_report_versions','covered_securities','latest_report_date','quarantined_source_records')},'latest_metrics':refresh['result']['coverage'],'samples':samples,'old_task':{'processed':job['processed'],'signals':len(signals),'latest_reference_attached':True,'explicit_historical_query_still_unavailable':True,'fingerprint_unchanged':fingerprint,'snapshot_seconds':snapshot_seconds,'errors':len(job['result']['errors'])},'mcp':asyncio.run(mcp_check()),'seconds':round(time.perf_counter()-start,3)}
     Path('artifacts/financial-acceptance.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf8')
     print(json.dumps(result,ensure_ascii=False,indent=2))
 

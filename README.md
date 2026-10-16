@@ -10,6 +10,7 @@
 - 技术组合筛选：成交额、此前5日均量倍数、换手率、MA多头排列、突破此前N日最高价。输出条件解释、价格口径和日期。
 - 行业与大型指数股票池快照、带来源的分类关系图；手动新闻名称匹配及候选技术指标。
 - 本机界面及官方 MCP Python SDK stdio / Streamable HTTP 服务。
+- A股股本原始快照、专业财务报告版本与全市场指标缓存；多策略结果始终附加最新采集数据，网页“更新股本及财务”独立更新，见[财务说明](docs/financial-data.md)。
 - 个股行情默认展示全部历史，支持起止日期、120/250/750日快捷范围及50条明细分页；接口返回本地覆盖和截断标记。
 - 日/周/月K线、均线、MACD和成交量联动看盘，以及逐股同步对比与失败重试，详见[看盘与同步说明](docs/workstation-and-sync.md)。
 
@@ -30,6 +31,7 @@ cd D:\projects\quant
 .\.venv\Scripts\quant.exe import-tdx --symbols 300138.SZ 600036.SH 601318.SH
 .\.venv\Scripts\quant.exe import-tdx   # 全部本地A股；不导入ETF/指数/港美股
 .\.venv\Scripts\quant.exe status
+.\.venv\Scripts\quant.exe refresh-fundamentals  # 更新本地股本、专业财务包及全市场指标
 .\.venv\Scripts\quant.exe serve
 .\.venv\Scripts\quant.exe mcp          # stdio
 .\.venv\Scripts\quant.exe mcp --transport streamable-http
@@ -60,7 +62,7 @@ cd D:\projects\quant
 
 详见 [docs/data-contract.md](docs/data-contract.md)。通达信下载与本项目导入为两个步骤。项目不绕过客户端权限、不后台请求行情供应商。
 
-股本事件并非全部类别已验证：当前仅类别5提供历史分母，其他事件保留原文数值。历史换手率可能因事件覆盖不全而失真，所有结果返回来源，严谨研究仍需抽样核验。快照的业务日采用源文件更新时间，采集时间单独保存，不把“更新文件”当作“该日刚公告”。
+股本事件并非全部类别已验证：当前仅类别5提供历史分母，其他事件保留原文数值。历史换手率可能因事件覆盖不全而失真，所有结果返回来源。新增版本化股本保留源文件更新时间和实际采集时间，不将GXRQ认作股本生效日；结果表“参考换手率”使用最新流通A股本，不等同于历史当时换手率。
 
 ## 验证
 

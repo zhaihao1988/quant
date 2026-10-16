@@ -1,10 +1,11 @@
 let multiTask=null,multiTimer=null,multiCatalog=null,multiStarting=false;
 let multiSignals=[],multiSort={key:null,ascending:true};
 let multiFilters={},multiFilterOpen=null;
-const multiColumns=[['symbol','证券'],['name','名称'],['signal_date','信号日期'],['strategy_label','策略'],['signal_level','级别'],['market_cap_formatted','市值'],['pe','PE'],['pb','PB'],['revenue_growth_yoy','营收同比（比率）'],['profit_growth_yoy','净利同比（比率）'],['peg_like_ratio','PEG类指标'],['net_profit_positive_3y_latest','连续3年及最新净利为正'],['growth_positive','增长为正'],['pe_lt_30','PE<30'],['peg_like_lt_1','PEG<1']];
+const multiColumns=[['symbol','证券'],['name','名称'],['signal_date','信号日期'],['strategy_label','策略'],['signal_level','级别'],['price_date','价格日期'],['financial_report_date','财报期'],['total_shares','总股本（股）'],['float_shares','流通A股（股）'],['market_cap_formatted','总市值'],['float_market_cap','流通A股市值'],['turnover_pct','参考换手率（%）'],['revenue_total','营业总收入'],['net_profit_parent','归母净利润'],['equity_parent','归母净资产'],['pe','PE'],['pb','PB'],['revenue_growth_yoy','营收同比（比率）'],['profit_growth_yoy','净利同比（比率）'],['peg_like_ratio','PEG类指标'],['net_profit_positive_3y_latest','连续3年及最新净利为正'],['growth_positive','增长为正'],['pe_lt_30','PE<30'],['peg_like_lt_1','PEG<1']];
 const multiBoolean=new Set(['net_profit_positive_3y_latest','growth_positive','pe_lt_30','peg_like_lt_1']);
 const multiMissing=v=>v===null||v===undefined||v===''||(typeof v==='number'&&Number.isNaN(v));
-const multiNumeric=new Set(['market_cap_formatted','pe','pb','revenue_growth_yoy','profit_growth_yoy','peg_like_ratio']);
+const multiNumeric=new Set(['market_cap_formatted','pe','pb','revenue_growth_yoy','profit_growth_yoy','peg_like_ratio','total_shares','float_shares','float_market_cap','turnover_pct','revenue_total','net_profit_parent','equity_parent']);
+const multiMoney=new Set(['market_cap_formatted','float_market_cap','revenue_total','net_profit_parent','equity_parent']);
 function multiToken(row,key){return multiMissing(row[key])?'missing:'+multiCell(row,key):JSON.stringify([typeof row[key],row[key]])}
 function multiMatches(row,key,filter){
  if(filter.values&&!filter.values.has(multiToken(row,key)))return false;
@@ -46,7 +47,7 @@ function openMultiFilter(key){
  multiFilterOpen={key};
  const menu=document.createElement('div');menu.id='multi-filter-menu';menu.className='multi-filter-menu';menu.setAttribute('role','dialog');menu.setAttribute('aria-label',label+'筛选');
  menu.innerHTML=`<strong>${esc(label)}筛选</strong><div class="multi-filter-sort"><button type="button" data-filter-sort="asc">升序 ↑</button><button type="button" data-filter-sort="desc">降序 ↓</button></div><input type="search" data-filter-search aria-label="搜索筛选值" placeholder="搜索值…">`+
-  (multiNumeric.has(key)?`<div class="multi-filter-range"><label>最小值<input type="number" step="any" data-filter-min value="${esc(filter?.min??'')}"></label><label>最大值<input type="number" step="any" data-filter-max value="${esc(filter?.max??'')}"></label></div><small>${key==='market_cap_formatted'?'市值单位：元':key.includes('growth')?'同比为比率，0.10代表10%':'区间包含边界值'}</small>`:'')+
+  (multiNumeric.has(key)?`<div class="multi-filter-range"><label>最小值<input type="number" step="any" data-filter-min value="${esc(filter?.min??'')}"></label><label>最大值<input type="number" step="any" data-filter-max value="${esc(filter?.max??'')}"></label></div><small>${multiMoney.has(key)?'金额单位：元':key.includes('growth')?'同比为比率，0.10代表10%':key==='turnover_pct'?'百分数，1代表1%':key.endsWith('shares')?'股本单位：股':'区间包含边界值'}</small>`:'')+
   '<div class="multi-filter-select"><button type="button" data-filter-all>全选搜索结果</button><button type="button" data-filter-none>取消搜索结果</button></div><div class="multi-filter-values"></div><p class="multi-filter-error" role="alert"></p><div class="multi-filter-actions"><button type="button" data-filter-clear>清除此列</button><button type="button" data-filter-cancel>取消</button><button type="button" class="primary" data-filter-apply>确定</button></div>';
  document.body.append(menu);
  const visibleChoices=()=>{const term=menu.querySelector('[data-filter-search]').value.trim().toLocaleLowerCase();return choices.filter(c=>c.label.toLocaleLowerCase().includes(term))};
@@ -80,9 +81,9 @@ window.addEventListener('resize',positionMultiFilter);
 document.addEventListener('scroll',event=>{if(multiFilterOpen&&!$('#multi-filter-menu')?.contains(event.target))positionMultiFilter()},true);
 function multiCell(row,key){
  const value=row[key];
- if(multiMissing(value))return ['symbol','name','signal_date','strategy_label','signal_level'].includes(key)?'—':(row.fundamental_labels?.[key]||'未接入');
+ if(multiMissing(value))return ['symbol','name','signal_date','strategy_label','signal_level','price_date','financial_report_date'].includes(key)?'—':(row.fundamental_labels?.[key]||'未接入');
  if(multiBoolean.has(key))return value===true?'是':value===false?'否':String(value);
- if(key==='market_cap_formatted'&&typeof value==='number')return Math.abs(value)>=1e8?num(value/1e8)+'亿':Math.abs(value)>=1e4?num(value/1e4)+'万':num(value);
+ if(multiMoney.has(key)&&typeof value==='number')return Math.abs(value)>=1e8?num(value/1e8)+'亿':Math.abs(value)>=1e4?num(value/1e4)+'万':num(value);
  return typeof value==='number'?num(value):String(value);
 }
 function renderMultiSignals(){
@@ -93,7 +94,7 @@ function renderMultiSignals(){
   const comparison=typeof x==='number'&&typeof y==='number'?x-y:typeof x==='boolean'&&typeof y==='boolean'?Number(x)-Number(y):String(x).localeCompare(String(y),'zh-CN',{numeric:true});
   return multiSort.ascending?comparison:-comparison;
  });
- $('#multi-results').innerHTML='<p class="hint">财务数据只在实际采集并核验后可用；冲突报告隔离，缺失项显示原因。PE沿用年报口径，市值使用不复权价。同比比率0.10代表10%。点击列名排序，点击 ▾ 筛选。</p>'+`<div class="multi-filter-summary"><span>显示 ${rows.length} / ${multiSignals.length} 条信号 · ${new Set(rows.map(r=>r.symbol)).size} 只股票</span>${Object.keys(multiFilters).length?'<button type="button" id="multi-clear-filters">清除全部筛选</button>':''}</div><div class="table-wrap">`+table(multiColumns.map(c=>c[1]),rows.map(r=>multiColumns.map(c=>multiCell(r,c[0]))))+'</div>'+(rows.length?'':'<p class="hint">没有匹配结果，可清除筛选或放宽条件。</p>');
+ $('#multi-results').innerHTML='<p class="hint">统一使用最新财务与股本参考，信号日期保持原样。PE为最近年报口径；价格日期单列显示。参考换手率按最新股本计算，非历史当时口径。同比0.10代表10%。列名排序，三角按钮筛选。</p>'+`<div class="multi-filter-summary"><span>显示 ${rows.length} / ${multiSignals.length} 条信号 · ${new Set(rows.map(r=>r.symbol)).size} 只股票 · 财务参考日 ${esc(multiSignals[0]?.financial_reference_date||'未更新')}</span>${Object.keys(multiFilters).length?'<button type="button" id="multi-clear-filters">清除全部筛选</button>':''}</div><div class="table-wrap">`+table(multiColumns.map(c=>c[1]),rows.map(r=>multiColumns.map(c=>multiCell(r,c[0]))))+'</div>'+(rows.length?'':'<p class="hint">没有匹配结果，可清除筛选或放宽条件。</p>');
  $('#multi-results').classList.remove('empty');
  document.querySelectorAll('#multi-results th').forEach((th,i)=>{
   const [key,label]=multiColumns[i];th.innerHTML=`<div class="multi-column-header"><button type="button" data-multi-sort="${esc(key)}">${esc(label)}${multiSort.key===key?(multiSort.ascending?' ↑':' ↓'):''}</button><button type="button" class="multi-column-filter ${multiFilters[key]?'active':''}" data-multi-filter="${esc(key)}" title="筛选${esc(label)}" aria-label="筛选${esc(label)}" aria-haspopup="dialog" aria-expanded="${multiFilterOpen?.key===key}"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="${multiFilters[key]?'M1 2h14L10 8v5l-4 2V8z':'M2 5h12L8 12z'}"/></svg></button></div>`;
@@ -105,6 +106,7 @@ function renderMultiSignals(){
 }
 const multiState={queued:'排队中',running:'运行中',completed:'已完成',partial:'完成，存在数据或执行问题',cancelled:'已停止',interrupted:'服务中断，请重新运行',failed:'失败'};
 async function loadMulti(){
+ loadFundamentalStatus().catch(e=>message(e.message));
  try{
   if(!multiCatalog){
    multiCatalog=await api('/multi-screens/strategies');
@@ -168,3 +170,22 @@ $('#multi-resume').onclick=async()=>{
 if(new URLSearchParams(window.location.search).get('view')==='multi'){
  document.addEventListener('DOMContentLoaded',()=>document.querySelector('[data-view="multi"]').click());
 }
+
+let fundamentalTimer=null,fundamentalWasActive=false;
+async function loadFundamentalStatus(){
+ clearTimeout(fundamentalTimer);
+ const job=await api('/fundamental-refresh'),active=job&&['queued','running'].includes(job.status);
+ $('#multi-fundamental-update').disabled=!!active;
+ if(!job){$('#multi-fundamental-status').textContent='尚未更新股本及财务，可读取通达信本地资料并计算全市场指标。';return}
+ const coverage=job.result?.coverage,labels={queued:'排队中',running:'更新中',completed:'已完成',partial:'完成，部分源文件有问题',failed:'失败',interrupted:'已中断，可重新更新'};
+ $('#multi-fundamental-status').textContent=`股本及财务：${labels[job.status]||job.status} · ${job.stage} ${job.total?'· '+job.processed+'/'+job.total:''}`+
+  (coverage?` · 股本${coverage.total_shares}只 / PE${coverage.pe}只 / PB${coverage.pb}只 · 参考日${job.result.reference_date}`:'')+
+  (job.errors?.length?' · '+job.errors.length+'项问题：'+(job.errors[0].error||'请查看导入记录'):'');
+ if(active)fundamentalTimer=setTimeout(()=>loadFundamentalStatus().catch(e=>message(e.message)),2000);
+ else if(fundamentalWasActive&&multiTask)await watchMulti(multiTask);
+ fundamentalWasActive=!!active;
+}
+$('#multi-fundamental-update').onclick=async()=>{
+ try{$('#multi-fundamental-update').disabled=true;await api('/fundamental-refresh',{});await loadFundamentalStatus()}
+ catch(e){$('#multi-fundamental-update').disabled=false;message(e.message)}
+};

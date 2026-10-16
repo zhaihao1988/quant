@@ -65,6 +65,20 @@ def get_fundamentals(symbol:str,as_of:date|None=None):
     return metrics_many([symbol],as_of or date.today())[symbol]
 
 
+@app.get('/api/fundamental-refresh')
+def fundamental_refresh_status():
+    from .fundamental_refresh import status
+    return status()
+
+
+@app.post('/api/fundamental-refresh',status_code=202)
+def fundamental_refresh_start(tasks:BackgroundTasks):
+    from .fundamental_refresh import reserve,run_refresh
+    run_id,reused=reserve()
+    if not reused:tasks.add_task(run_refresh,run_id)
+    return {'id':run_id,'reused':reused}
+
+
 @app.get('/api/securities')
 def search(q:str='',limit:int=Query(30,ge=1,le=100)):return services.securities(q,limit)
 

@@ -11,11 +11,16 @@ def int_date(value):
 
 
 def dbf_records(path):
-    data = path.read_bytes()
+    yield from dbf_records_bytes(path.read_bytes())
+
+
+def dbf_records_bytes(data):
     if len(data) < 32:
         raise ValueError('DBF文件头不完整')
     count = struct.unpack_from('<I', data, 4)[0]
     header_size, row_size = struct.unpack_from('<HH', data, 8)
+    if header_size<33 or (header_size-33)%32 or row_size<1:
+        raise ValueError('DBF记录布局无效')
     if header_size + count * row_size > len(data):
         raise ValueError('DBF文件不完整，可能正在更新')
     fields, offset = [], 1
@@ -24,6 +29,7 @@ def dbf_records(path):
         size = data[i+16]
         fields.append((name, offset, size))
         offset += size
+    if offset!=row_size:raise ValueError('DBF字段长度与记录长度不一致')
     for i in range(count):
         row = data[header_size+i*row_size:header_size+(i+1)*row_size]
         if row[:1] != b'*':

@@ -13,6 +13,7 @@ def main():
     sub.add_parser('status')
     financial=sub.add_parser('import-financials');financial.add_argument('--directory')
     sub.add_parser('audit-financials')
+    sub.add_parser('refresh-fundamentals')
     sub.add_parser('serve')
     mcp=sub.add_parser('mcp');mcp.add_argument('--transport',choices=['stdio','streamable-http'],default='stdio')
     args=parser.parse_args()
@@ -32,6 +33,12 @@ def main():
         from .financial_ingest import import_financials
         result=import_financials(args.directory)
         print(json.dumps(result,default=str,ensure_ascii=False,indent=2))
+        if result['status']!='completed':raise SystemExit(1)
+    elif args.command=='refresh-fundamentals':
+        from .fundamental_refresh import reserve,run_refresh,status
+        run_id,reused=reserve()
+        if not reused:run_refresh(run_id)
+        result=status();print(json.dumps(result,ensure_ascii=False,default=str,indent=2))
         if result['status']!='completed':raise SystemExit(1)
     elif args.command=='audit-financials':
         from .financial_review import quarantine_existing

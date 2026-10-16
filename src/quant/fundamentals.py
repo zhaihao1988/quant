@@ -7,7 +7,7 @@ from psycopg.types.json import Jsonb
 from .db import connect
 from .services import clean
 
-FORMULA_VERSION='annual-observed-v2'
+FORMULA_VERSION='annual-latest-capital-v3'
 FINANCIAL_KEYS=['pe','pb','revenue_growth_yoy','profit_growth_yoy','peg_like_ratio',
  'net_profit_positive_3y_latest','growth_positive','pe_lt_30','peg_like_lt_1']
 LABELS={'available':'可用','not_connected':'未接入','not_collected_as_of':'采集日前不可用',
@@ -87,6 +87,10 @@ def cutoff_for(day):
     return datetime.combine(day+timedelta(days=1),time.min,ZoneInfo('Asia/Shanghai'))
 
 
+def latest_reference_date():
+    return datetime.now(ZoneInfo('Asia/Shanghai')).date()
+
+
 def load_inputs(symbol,as_of,connection=None):
     cutoff=cutoff_for(as_of)
     with (nullcontext(connection) if connection is not None else connect()) as conn:
@@ -96,10 +100,15 @@ def load_inputs(symbol,as_of,connection=None):
           f.id AS file_id,f.observed_at FROM financial_report r JOIN financial_file_revision f ON r.file_id=f.id
           WHERE r.symbol=%s AND r.report_date<=%s AND f.observed_at<%s ORDER BY r.report_date DESC,f.observed_at DESC,f.id DESC,r.source_ordinal''',(symbol,as_of,cutoff)).fetchall()
         exists=conn.execute('SELECT 1 FROM financial_report WHERE symbol=%s LIMIT 1',(symbol,)).fetchone()
-        price=conn.execute('SELECT close,trade_date FROM daily_bar WHERE symbol=%s AND trade_date BETWEEN %s AND %s ORDER BY trade_date DESC LIMIT 1',(symbol,as_of-timedelta(days=7),as_of)).fetchone()
-        shares=conn.execute('''SELECT total_shares,effective_date,source FROM share_observation WHERE symbol=%s
-          AND effective_date<=%s AND observed_at<%s AND total_shares>0 ORDER BY effective_date DESC,
-          CASE quality WHEN 'event' THEN 0 ELSE 1 END LIMIT 1''',(symbol,as_of,cutoff)).fetchone()
+        price=conn.execute('SELECT close,volume,amount,trade_date FROM daily_bar WHERE symbol=%s AND trade_date BETWEEN %s AND %s ORDER BY trade_date DESC LIMIT 1',(symbol,as_of-timedelta(days=7),as_of)).fetchone()
+        shares=conn.execute('''SELECT s.*,f.observed_at,f.source_modified_at FROM capital_snapshot s
+          JOIN capital_file_revision f ON f.id=s.file_id WHERE s.symbol=%s AND f.observed_at<%s
+          ORDER BY f.observed_at DESC,f.id DESC LIMIT 1''',(symbol,cutoff)).fetchone()
+        versioned=bool(shares)
+        if not shares:
+            shares=conn.execute('''SELECT total_shares,float_shares,effective_date,source,observed_at FROM share_observation WHERE symbol=%s
+              AND effective_date<=%s AND observed_at<%s ORDER BY effective_date DESC,
+              CASE quality WHEN 'event' THEN 0 ELSE 1 END,observed_at DESC LIMIT 1''',(symbol,as_of,cutoff)).fetchone()
     chosen={};grouped={}
     for row in rows:
         period=row['report_date']
@@ -118,9 +127,31 @@ def load_inputs(symbol,as_of,connection=None):
         reports.append({'period':period,'state':state,'values':facts,'ids':[r['id'] for r in group]})
     default='not_collected_as_of' if exists and not rows else 'missing_report'
     result=calculate_metrics(reports,float(price['close']) if price else None,shares['total_shares'] if shares else None,default)
+    float_shares=shares.get('float_shares') if shares else None
+    result.update(total_shares=shares.get('total_shares') if shares else None,float_shares=float_shares,
+                  float_market_cap=None,turnover_pct=None,
+                  financial_report_date=reports[0]['period'].isoformat() if reports else None,
+                  financial_reference_date=as_of.isoformat())
+    states=result['fundamental_states']
+    states['total_shares']='available' if result['total_shares'] is not None else 'missing_shares'
+    states['float_shares']='available' if float_shares is not None else 'missing_shares'
+    for key in ('float_market_cap','turnover_pct'):
+        states[key]='missing_price' if not price else 'missing_shares' if not float_shares else 'available'
+    if price and float_shares and float_shares>0:
+        result['float_market_cap']=round(float(price['close'])*float_shares,4)
+        result['turnover_pct']=round(price['volume']/float_shares*100,4)
+    for key in ('revenue_total','net_profit_parent','equity_parent'):
+        latest=reports[0] if reports else None
+        result[key]=latest['values'].get(key) if latest and latest['state']=='available' else None
+        states[key]=latest['state'] if latest and latest['state']!='available' else 'available' if result[key] is not None else 'missing_field' if latest else default
+    result['fundamental_labels']={key:LABELS.get(state,state) for key,state in states.items()}
     result.update(symbol=symbol,as_of=as_of.isoformat(),availability_policy='actual_collection_only',
        valuation_price_basis='不复权收盘价×当时可见总股本',price_date=str(price['trade_date']) if price else None,
-       shares_source=shares['source'] if shares else None,shares_effective_date=str(shares['effective_date']) if shares else None,
+       shares_source='tdx_base_versioned' if versioned else shares['source'] if shares else None,
+       shares_effective_date=str(shares['effective_date']) if shares and not versioned else None,
+       shares_observed_at=shares['observed_at'].isoformat() if shares else None,
+       capital_file_id=shares['file_id'] if versioned else None,
+       turnover_basis='实际价格日成交量÷所选股本；最新参考不等同于历史换手率',
        original_revision_note='只使用实际采集并核验后可见版本；未还原采集前首次披露数据；冲突报告不参与指标。')
     return result
 
@@ -129,7 +160,8 @@ def signature():
     with connect() as conn:
         row=conn.execute('''SELECT (SELECT max(id) FROM financial_file_revision) AS financial,
          (SELECT max(imported_at) FROM import_file) AS quotes,(SELECT max(observed_at) FROM share_observation) AS shares,
-         (SELECT max(reviewed_at) FROM financial_report) AS review''').fetchone()
+         (SELECT max(reviewed_at) FROM financial_report) AS review,
+         (SELECT max(id) FROM capital_file_revision) AS capital''').fetchone()
     return hashlib.sha256((FORMULA_VERSION+json.dumps(row,default=str,sort_keys=True)).encode()).hexdigest()
 
 
@@ -148,7 +180,10 @@ def metrics_many(symbols,as_of):
 
 def attach(signals,as_of):
     with connect() as conn:
-        ready=conn.execute('SELECT 1 FROM financial_file_revision LIMIT 1').fetchone()
+        ready=conn.execute('SELECT 1 FROM financial_file_revision UNION ALL SELECT 1 FROM capital_file_revision LIMIT 1').fetchone()
     if not ready:return signals
-    by_symbol=metrics_many({s['symbol'] for s in signals},as_of)
-    return [{**s,**by_symbol[s['symbol']]} for s in signals]
+    # User explicitly chose latest financial reference for every screen, independent of signal date.
+    reference_date=latest_reference_date()
+    by_symbol=metrics_many({s['symbol'] for s in signals},reference_date)
+    return [{**s,**by_symbol[s['symbol']],'fundamental_reference':'latest_collected',
+             'technical_as_of':as_of.isoformat()} for s in signals]

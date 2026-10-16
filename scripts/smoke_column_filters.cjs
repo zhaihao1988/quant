@@ -33,7 +33,7 @@ const fs=require('node:fs');
   const open=async key=>{await page.click(`[data-multi-filter="${key}"]`);await page.waitForSelector('#multi-filter-menu')};
   const apply=async()=>{await page.click('[data-filter-apply]');await page.waitForSelector('#multi-filter-menu',{state:'detached'})};
   const clearAll=async()=>{await page.click('#multi-clear-filters');await count(3)};
-  if(await page.locator('[data-multi-filter]').count()!==15)throw Error('Each column needs a filter');
+  if(await page.locator('[data-multi-filter]').count()!==24)throw Error('Each column needs a filter');
   await open('name');await page.fill('[data-filter-search]','招商');await apply();await count(1);
   if(!await page.locator('#multi-results tbody').innerText().then(t=>t.includes('招商银行')))throw Error('Search filter failed');
   await page.evaluate(id=>watchMulti(id),id);await count(1); // A same-task refresh retains filters.
@@ -65,6 +65,6 @@ const fs=require('node:fs');
   if(rect.x<0||rect.x+rect.width>1100||rect.y<0||rect.y+rect.height>850)throw Error('Filter popup clipped by viewport');
   fs.mkdirSync('artifacts',{recursive:true});await page.screenshot({path:'artifacts/column-filters.png',fullPage:true});
   if(errors.length)throw Error(errors.join('; '));
-  console.log('Verified: 15 column filters, search, checkbox selection, numeric bounds, multi-column AND, missing reasons, false/zero, empty recovery, clear/reset, sorting, refresh persistence, task isolation, popup placement.');
+  console.log('Verified: 24 column filters, search, checkbox selection, numeric bounds, multi-column AND, missing reasons, false/zero, empty recovery, clear/reset, sorting, refresh persistence, task isolation, popup placement.');
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

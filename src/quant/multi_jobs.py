@@ -65,7 +65,8 @@ def snapshot(run_id):
     row['result']['signals']=attach(row['result'].get('signals',[]),row['effective_date'])
     if any(s.get('availability_policy')=='actual_collection_only' for s in row['result']['signals']):
         row['result']['fundamental_status']='actual_collection_only'
-    row['result']['note']='原7个技术策略条件不变；财务指标只使用筛选日已采集并核验的版本，冲突报告隔离，缺项不填零。'
+    row['result']['fundamental_reference']='latest_collected'
+    row['result']['note']='原7个技术策略条件不变；按用户要求统一附加最新财务参考，明确财务和价格日期，冲突报告隔离。'
     return clean(row)
 
 
