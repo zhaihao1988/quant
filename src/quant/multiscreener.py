@@ -32,6 +32,7 @@ class MultiScreenRequest(BaseModel):
     as_of: date | None = None
     symbols: list[str] = Field(default_factory=list, max_length=10000)
     taxonomy_id: str | None = None
+    workers: int = Field(default=4, ge=1, le=4)
     strategies: list[str] = Field(default_factory=lambda: [cls.__name__ for cls, _ in REGISTRY])
 
     @model_validator(mode='after')

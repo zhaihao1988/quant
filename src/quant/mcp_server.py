@@ -48,7 +48,7 @@ def create_server():
 
     @mcp.tool()
     def start_multi_screen(parameters:dict) -> dict:
-        """后台运行原多策略选股；as_of、symbols(如300138.SZ)、taxonomy_id、strategies(类名列表)。返回任务ID，用multi_screen_status查询。各策略独立汇总，不取交集；基本面未接入。"""
+        """后台运行原多策略选股；as_of、symbols(如300138.SZ)、taxonomy_id、strategies(类名列表)、workers(1至4，默认4进程)。返回任务ID，用multi_screen_status查询。各策略独立汇总，不取交集；基本面未接入。"""
         from threading import Thread
         from .multiscreener import MultiScreenRequest
         from .multi_jobs import reserve,run_job

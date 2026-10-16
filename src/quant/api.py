@@ -158,6 +158,18 @@ def multi_cancel(run_id:UUID):
     return cancel(run_id)
 
 
+class MultiResumeRequest(BaseModel):
+    workers:int=Field(default=4,ge=1,le=4)
+
+
+@app.post('/api/multi-screens/{run_id}/resume',status_code=202)
+def multi_resume(run_id:UUID,body:MultiResumeRequest,tasks:BackgroundTasks):
+    from .multi_jobs import resume,run_job
+    task_id=resume(run_id,body.workers)
+    tasks.add_task(run_job,task_id)
+    return {'id':task_id}
+
+
 @app.get('/api/graph')
 def get_graph(q:str=Query(min_length=1,max_length=100)):return services.graph(q)
 

@@ -72,7 +72,7 @@ cd D:\projects\quant
 
 ## 与旧项目的关系
 
-本地行情接入、持久化与接口独立实现。原有组合条件选股继续保留；另按用户要求原样移植 `zhaihao1988/quant_platform` 的 MultiStrategyScreener 七个技术策略，公共接口作最小适配，不引入旧ORM和外部数据供应商。多策略使用全部历史、通达信前复权及成交量手，周月输入按旧聚合规则重建；基本面暂未接入。网页“多策略选股”可选择策略、股票池、指定股票和截止日，后台运行并显示进度、信号及错误。规则、验证和MCP接口见 [docs/multiscreener-migration-review.md](docs/multiscreener-migration-review.md)；最初的旧代码分析见 [docs/migration-review.md](docs/migration-review.md)。
+本地行情接入、持久化与接口独立实现。原有组合条件选股继续保留；另按用户要求原样移植 `zhaihao1988/quant_platform` 的 MultiStrategyScreener 七个技术策略，公共接口作最小适配，不引入旧ORM和外部数据供应商。多策略使用全部历史、通达信前复权及成交量手，周月输入按旧聚合规则重建；基本面暂未接入。网页“多策略选股”可选择策略、股票池、指定股票和截止日，默认4进程并行，显示进度和错误，停止后可保留已完成结果并继续剩余股票。结果表按旧项目列出基本面字段，缺失显示“未接入”，支持排序，技术详情仍保存在数据库但不在结果表展开。规则、测速、验证和MCP接口见 [docs/multiscreener-migration-review.md](docs/multiscreener-migration-review.md)；最初的旧代码分析见 [docs/migration-review.md](docs/migration-review.md)。
 
 ## 尚未完成
 
