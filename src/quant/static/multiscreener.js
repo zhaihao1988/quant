@@ -1,6 +1,6 @@
 let multiTask=null,multiTimer=null,multiCatalog=null,multiStarting=false;
 let multiSignals=[],multiSort={key:null,ascending:true};
-let multiFilters={},multiFilterOpen=null;
+let multiFilters={},multiFilterOpen=null,multiTableObserver=null;
 const multiColumns=[['symbol','证券'],['name','名称'],['signal_date','信号日期'],['strategy_label','策略'],['signal_level','级别'],['price_date','价格日期'],['financial_report_date','财报期'],['total_shares','总股本（股）'],['float_shares','流通A股（股）'],['market_cap_formatted','总市值'],['float_market_cap','流通A股市值'],['turnover_pct','参考换手率（%）'],['revenue_total','营业总收入'],['net_profit_parent','归母净利润'],['equity_parent','归母净资产'],['pe','PE'],['pb','PB'],['revenue_growth_yoy','营收同比（比率）'],['profit_growth_yoy','净利同比（比率）'],['peg_like_ratio','PEG类指标'],['net_profit_positive_3y_latest','连续3年及最新净利为正'],['growth_positive','增长为正'],['pe_lt_30','PE<30'],['peg_like_lt_1','PEG<1']];
 const multiBoolean=new Set(['net_profit_positive_3y_latest','growth_positive','pe_lt_30','peg_like_lt_1']);
 const multiMissing=v=>v===null||v===undefined||v===''||(typeof v==='number'&&Number.isNaN(v));
@@ -87,6 +87,8 @@ function multiCell(row,key){
  return typeof value==='number'?num(value):String(value);
 }
 function renderMultiSignals(){
+ const previousScroll=$('#multi-results .table-wrap')?.scrollLeft||0;
+ multiTableObserver?.disconnect();
  const rows=multiSignals.filter(row=>Object.entries(multiFilters).every(([key,f])=>multiMatches(row,key,f)));
  if(multiSort.key)rows.sort((a,b)=>{
   const x=a[multiSort.key],y=b[multiSort.key];
@@ -96,12 +98,29 @@ function renderMultiSignals(){
  });
  $('#multi-results').innerHTML='<p class="hint">统一使用最新财务与股本参考，信号日期保持原样。PE为最近年报口径；价格日期单列显示。参考换手率按最新股本计算，非历史当时口径。同比0.10代表10%。列名排序，三角按钮筛选。</p>'+`<div class="multi-filter-summary"><span>显示 ${rows.length} / ${multiSignals.length} 条信号 · ${new Set(rows.map(r=>r.symbol)).size} 只股票 · 财务参考日 ${esc(multiSignals[0]?.financial_reference_date||'未更新')}</span>${Object.keys(multiFilters).length?'<button type="button" id="multi-clear-filters">清除全部筛选</button>':''}</div><div class="table-wrap">`+table(multiColumns.map(c=>c[1]),rows.map(r=>multiColumns.map(c=>multiCell(r,c[0]))))+'</div>'+(rows.length?'':'<p class="hint">没有匹配结果，可清除筛选或放宽条件。</p>');
  $('#multi-results').classList.remove('empty');
+ const wrap=$('#multi-results .table-wrap');
+ const navigation=document.createElement('div');navigation.className='actions';navigation.setAttribute('aria-label','结果表列导航');
+ navigation.innerHTML='<span class="hint">左右查看全部指标：</span><button type="button" data-multi-jump="symbol">证券与信号</button><button type="button" data-multi-jump="total_shares">股本与市值</button><button type="button" data-multi-jump="pe">PE / PB / 增长指标 →</button>';
+ const scroll=document.createElement('div');scroll.style.cssText='overflow-x:auto;height:20px;margin-bottom:8px;';scroll.tabIndex=0;scroll.setAttribute('role','region');scroll.setAttribute('aria-label','结果表横向滚动条');
+ const track=document.createElement('div');track.style.height='1px';scroll.append(track);
+ wrap.before(navigation,scroll);
+ const syncSize=()=>{track.style.width=wrap.scrollWidth+'px';scroll.scrollLeft=wrap.scrollLeft};
+ scroll.onscroll=()=>{if(wrap.scrollLeft!==scroll.scrollLeft)wrap.scrollLeft=scroll.scrollLeft};
+ wrap.addEventListener('scroll',()=>{if(scroll.scrollLeft!==wrap.scrollLeft)scroll.scrollLeft=wrap.scrollLeft},{passive:true});
+ navigation.querySelectorAll('[data-multi-jump]').forEach(button=>button.onclick=()=>{
+  closeMultiFilter();
+  const th=wrap.querySelector(`[data-multi-sort="${button.dataset.multiJump}"]`).closest('th');
+  wrap.scrollLeft+=th.getBoundingClientRect().left-wrap.getBoundingClientRect().left;
+  scroll.scrollLeft=wrap.scrollLeft;
+ });
  document.querySelectorAll('#multi-results th').forEach((th,i)=>{
   const [key,label]=multiColumns[i];th.innerHTML=`<div class="multi-column-header"><button type="button" data-multi-sort="${esc(key)}">${esc(label)}${multiSort.key===key?(multiSort.ascending?' ↑':' ↓'):''}</button><button type="button" class="multi-column-filter ${multiFilters[key]?'active':''}" data-multi-filter="${esc(key)}" title="筛选${esc(label)}" aria-label="筛选${esc(label)}" aria-haspopup="dialog" aria-expanded="${multiFilterOpen?.key===key}"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="${multiFilters[key]?'M1 2h14L10 8v5l-4 2V8z':'M2 5h12L8 12z'}"/></svg></button></div>`;
   th.querySelector('[data-multi-sort]').onclick=()=>{closeMultiFilter();multiSort={key,ascending:multiSort.key===key?!multiSort.ascending:true};renderMultiSignals()};
   th.querySelector('[data-multi-filter]').onclick=()=>openMultiFilter(key);
  });
  $('#multi-clear-filters')?.addEventListener('click',()=>{closeMultiFilter();multiFilters={};renderMultiSignals()});
+ wrap.scrollLeft=previousScroll;syncSize();
+ multiTableObserver=new ResizeObserver(syncSize);multiTableObserver.observe(wrap);
  positionMultiFilter();
 }
 const multiState={queued:'排队中',running:'运行中',completed:'已完成',partial:'完成，存在数据或执行问题',cancelled:'已停止',interrupted:'服务中断，请重新运行',failed:'失败'};
