@@ -22,8 +22,10 @@ def save_news(source,record):
         revision=c.execute('''INSERT INTO news_revision(article_id,sha256,title,content,source_url,published_at,raw)
          VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(article_id,sha256) DO NOTHING RETURNING id''',
          (article['id'],checksum,record['title'],record['content'],record['source_url'],record['published_at'],Jsonb(record['raw']))).fetchone()
-        if revision:c.execute('UPDATE news_article SET current_revision=%s WHERE id=%s',(revision['id'],article['id']))
-    return bool(revision)
+        if not revision:revision=c.execute('SELECT id FROM news_revision WHERE article_id=%s AND sha256=%s',(article['id'],checksum)).fetchone()
+        changed=article['current_revision']!=revision['id']
+        if changed:c.execute('UPDATE news_article SET current_revision=%s WHERE id=%s',(revision['id'],article['id']))
+    return changed
 
 def poll_source(source,max_pages=20):
     now=datetime.now(timezone.utc)
@@ -66,7 +68,7 @@ def load_document(kind,key):
     with connect() as c:
         if kind=='news':
             row=c.execute('''SELECT r.id::text AS revision,r.title,r.content,r.source_url,r.published_at,
-             r.collected_at AS known_at,NULL::text AS symbol FROM news_article a JOIN news_revision r ON r.id=a.current_revision WHERE a.id=%s''',(int(key),)).fetchone()
+             a.current_seen_at AS known_at,NULL::text AS symbol FROM news_article a JOIN news_revision r ON r.id=a.current_revision WHERE a.id=%s''',(int(key),)).fetchone()
         elif kind=='company':
             symbol,category,report=key.split(':',2)
             row=c.execute('''SELECT d.id::text AS revision,d.title,d.content,p.source_url,
@@ -166,7 +168,7 @@ def feed(query='',limit=40):
         rows=c.execute('''SELECT a.id,a.source,a.first_seen_at,r.id AS revision_id,r.title,r.content,r.source_url,r.published_at,
           (SELECT state FROM evidence_queue WHERE kind='news' AND doc_key=a.id::text) AS index_state
           FROM news_article a JOIN news_revision r ON r.id=a.current_revision
-          WHERE (%s='' OR r.title ILIKE %s OR r.content ILIKE %s) ORDER BY r.published_at DESC LIMIT %s''',(query,'%'+query+'%','%'+query+'%',limit)).fetchall()
+          WHERE (%s='' OR r.title ILIKE %s OR r.content ILIKE %s) ORDER BY r.published_at DESC,a.id DESC LIMIT %s''',(query,'%'+query+'%','%'+query+'%',limit)).fetchall()
     return clean(rows)
 
 def search(query,kind='company',symbol=None,as_of=None,limit=12):
@@ -190,6 +192,6 @@ def search(query,kind='company',symbol=None,as_of=None,limit=12):
           JOIN evidence_queue q ON q.kind=ec.kind AND q.doc_key=ec.doc_key AND q.state='ready'
           LEFT JOIN security s ON s.symbol=ec.symbol WHERE ec.profile=%s AND (%s='all' OR ec.kind=%s)
           AND (%s::text IS NULL OR ec.symbol=%s) AND ec.known_at<=%s AND (ec.published_at IS NULL OR ec.published_at<=%s)
-          ORDER BY literal_match DESC,v.embedding OPERATOR(public.<=>) %s::public.vector LIMIT %s''',
+          ORDER BY literal_match DESC,v.embedding OPERATOR(public.<=>) %s::public.vector,ec.id LIMIT %s''',
           (vector,'%'+query+'%',profile,kind,kind,symbol,symbol,cutoff,cutoff,vector,limit)).fetchall()
     return clean({'query':query,'as_of':cutoff,'profile':profile,'evidence':rows})

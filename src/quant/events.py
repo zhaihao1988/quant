@@ -86,7 +86,7 @@ timing标为最近收盘后的消息只能作为后续观察，不能解释此�
 
 def analyze_article(article_id):
     with connect() as c:
-        news=c.execute('''SELECT a.id,a.source,a.first_seen_at,r.* FROM news_article a JOIN news_revision r ON r.id=a.current_revision WHERE a.id=%s''',(article_id,)).fetchone()
+        news=c.execute('''SELECT a.id,a.source,a.first_seen_at,a.current_seen_at,r.* FROM news_article a JOIN news_revision r ON r.id=a.current_revision WHERE a.id=%s''',(article_id,)).fetchone()
         if not news:raise ValueError('没有这条新闻')
     # Analysis is immutable; explicit requests can create a later version when data changes.
     query=news['title'][:180]
@@ -97,7 +97,7 @@ def analyze_article(article_id):
         mentions=c.execute('''SELECT symbol,name FROM security WHERE kind='stock'
           AND ((length(name)>=3 AND position(name in %s)>0) OR position(code in %s)>0) ORDER BY symbol LIMIT 8''',
           (news['title']+' '+news['content'],news['title']+' '+news['content'])).fetchall()
-    evidence.insert(0,dict(id='news:'+str(news['id']),symbol=None,mentioned_symbols=[s['symbol'] for s in mentions],title=news['title'],content=news['title']+'\n'+news['content'],source_url=news['source_url'],published_at=str(news['published_at']),known_at=str(news['collected_at'])))
+    evidence.insert(0,dict(id='news:'+str(news['id']),symbol=None,mentioned_symbols=[s['symbol'] for s in mentions],title=news['title'],content=news['title']+'\n'+news['content'],source_url=news['source_url'],published_at=str(news['published_at']),known_at=str(news['current_seen_at'])))
     return create_analysis(query,evidence,company['profile'],datetime.now(timezone.utc),news['id'])
 
 def create_analysis(query,evidence,profile,cutoff,revision=None):

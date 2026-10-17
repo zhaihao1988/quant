@@ -21,6 +21,13 @@ def test_news_idempotent_and_correction_transactional_queue(isolated_db):
  with connect() as c:
   assert c.execute('SELECT count(*) n FROM news_revision').fetchone()['n']==2
   assert c.execute('SELECT generation FROM evidence_queue').fetchone()['generation']==2
+ # A correction may subsequently revert to a previously observed text.
+ assert info.save_news('ths',r)
+ with connect() as c:
+  assert c.execute('SELECT count(*) n FROM news_revision').fetchone()['n']==2
+  assert c.execute('SELECT count(*) n FROM news_revision_observation').fetchone()['n']==3
+  assert c.execute('SELECT generation FROM evidence_queue').fetchone()['generation']==3
+ assert info.load_document('news','1')['content']==r['content']
 
 def test_embedding_checks_order_dimensions_nonfinite_and_zero():
  vectors=fake_vectors(['a','b']);data=[{'index':1,'embedding':vectors[1]},{'index':0,'embedding':vectors[0]}]
