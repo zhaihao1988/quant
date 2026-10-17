@@ -9,7 +9,7 @@ from psycopg.types.json import Jsonb
 from .db import connect
 from .services import clean
 
-PARSER_VERSION='ths-f10-v1'
+PARSER_VERSION='ths-f10-v2'
 BASE='https://basic.10jqka.com.cn'
 _executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix='company-documents')
 _last_request=0.0
@@ -88,7 +88,21 @@ def parse_page(body,code,page):
         add('executives','高管介绍','\n\n'.join(p['name']+' · '+p['role']+'\n'+p['biography'] for p in people),details={'people':people})
     else:raise ValueError('不支持的资料页面')
     if not documents:raise ValueError('未识别到有效正文，原有资料保留')
-    return documents,encoding
+    # F10 can list multiple different narratives under one report date.
+    # Preserve all source variants, without guessing which one is authoritative.
+    merged={}
+    for doc in documents:
+        key=(doc['kind'],doc['report_key'])
+        if key not in merged:merged[key]=doc;continue
+        previous=merged[key]
+        variants=previous['details'].get('source_variants',[{'content':previous['content'],'is_excerpt':previous['is_excerpt']}])
+        if not any(v['content']==doc['content'] for v in variants):
+            variants.append({'content':doc['content'],'is_excerpt':doc['is_excerpt']})
+        if len(variants)>1:
+            previous['details']['source_variants']=variants
+            previous['content']='【来源同一报告期有多份不同正文，全部保留，未判断版本先后】\n\n'+'\n\n'.join(f'【原文{i}】\n'+v['content'] for i,v in enumerate(variants,1))
+            previous['is_excerpt']=any(v['is_excerpt'] for v in variants)
+    return list(merged.values()),encoding
 
 
 def save_page(symbol,page,url,body):

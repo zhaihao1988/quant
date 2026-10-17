@@ -31,3 +31,5 @@
 - `POST /api/stock-library/jobs/{id}/resume`
 
 后台日志存放 `.runtime/company-library-{id}.log`。可通过 `python -m quant.company_library_worker 任务ID` 运行已预约的任务，网页负责通常的提交和继续操作。
+
+来源同一报告期出现多份不同正文时，在同一报告期条目中保留全部原文，并明确标注未判断版本先后；完全相同的重复正文不重复展示。原始网页仍按版本保存。

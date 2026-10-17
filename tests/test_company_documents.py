@@ -99,3 +99,15 @@ def test_unchanged_old_content_uses_last_successful_check_for_ttl(isolated_db):
         conn.execute("INSERT INTO company_refresh(symbol,job_id,status,finished_at,last_success_at) VALUES ('300138.SZ',%s,'completed',now(),now())",(uuid4(),))
     current=docs.documents('300138.SZ')
     assert not current['stale'] and not current['auto_refresh_due']
+
+
+def test_same_period_different_narratives_are_both_preserved(isolated_db):
+    from bs4 import BeautifulSoup
+    soup=BeautifulSoup(operate().decode('gb18030'),'html.parser')
+    soup.select_one('#observe .m_tab').append(BeautifulSoup('<a class="operateTab">2026-06-30</a>','html.parser'))
+    soup.select_one('#observe').append(BeautifulSoup('<div class="m_tab_content m_tab_content2"><p class="clearfix">这是来源的另一份不同正文，保留不同的业务信息。</p></div>','html.parser'))
+    body=soup.encode('gb18030')
+    docs.save_page('300138.SZ','operate',f'{docs.BASE}/300138/operate.html',body)
+    stored=next(d for d in docs.documents('300138.SZ')['documents'] if d['kind']=='discussion')
+    assert len(stored['details']['source_variants'])==2
+    assert '这是报告完整原文' in stored['content'] and '这是来源的另一份不同正文' in stored['content']
