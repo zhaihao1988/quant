@@ -53,6 +53,7 @@
     for(const id of ['market-newest','market-prev','market-next','market-oldest'])$('#'+id).disabled=true;
     try{
       const symbol=await symbolValue();if(current!==requestId)return;$('#symbol').value=symbol;
+      document.dispatchEvent(new CustomEvent('quant:stock-detail',{detail:{symbol}}));
       const params=new URLSearchParams({limit:$('#market-range').value,adjustment:$('#market-adjust').value,timeframe:$('#market-timeframe').value,ma:$('#market-ma').value,fast:$('#macd-fast').value,slow:$('#macd-slow').value,signal:$('#macd-signal').value});
       for(const key of ['start','end'])if($('#market-'+key).value)params.set(key,$('#market-'+key).value);
       const incoming=await api(`/market/${encodeURIComponent(symbol)}?${params}`);

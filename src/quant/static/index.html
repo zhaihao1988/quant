@@ -62,25 +62,42 @@
  </div>
 </section>
 <section id="market" class="view">
- <div class="panel market-panel"><div class="market-heading"><h3>盘后看盘</h3><button id="market-back" type="button" hidden>返回选股结果</button></div>
+ <div class="panel market-panel"><div class="market-heading"><h3>个股详情</h3><button id="market-back" type="button" hidden>返回选股结果</button><button id="stock-text-jump" type="button">经营资料 ↓</button></div>
  <form id="market-form" class="market-toolbar">
   <label>代码或名称<input id="symbol" value="300138.SZ" placeholder="300138 / 晨光生物"></label>
   <label>周期<select id="market-timeframe"><option value="daily">日线</option><option value="weekly">周线</option><option value="monthly">月线</option></select></label>
-  <label>加载范围<select id="market-range"><option value="20000">全部历史</option><option value="120">最近120根K线</option><option value="250">最近250根K线</option><option value="750">最近750根K线</option></select></label>
-  <label>起始日<input type="date" id="market-start"></label><label>截止日<input type="date" id="market-end"></label>
   <label>价格口径<select id="market-adjust"><option value="qfq">前复权</option><option value="raw">不复权</option></select></label>
-  <label class="ma-field">均线周期<input id="market-ma" value="5,10,20,30,60,120,250" aria-label="均线周期"></label>
-  <label>MACD快线<input id="macd-fast" type="number" value="12" min="1" max="299"></label>
-  <label>MACD慢线<input id="macd-slow" type="number" value="26" min="2" max="300"></label>
-  <label>MACD信号线<input id="macd-signal" type="number" value="9" min="1" max="300"></label>
   <button type="submit" class="primary" id="market-submit">查询行情</button>
+  <details class="market-settings"><summary>图表设置</summary><div class="market-settings-fields">
+   <label>加载范围<select id="market-range"><option value="20000">全部历史</option><option value="120">最近120根K线</option><option value="250">最近250根K线</option><option value="750">最近750根K线</option></select></label>
+   <label>起始日<input type="date" id="market-start"></label><label>截止日<input type="date" id="market-end"></label>
+   <label class="ma-field">均线周期<input id="market-ma" value="5,10,20,30,60,120,250" aria-label="均线周期"></label>
+   <label>MACD快线<input id="macd-fast" type="number" value="12" min="1" max="299"></label>
+   <label>MACD慢线<input id="macd-slow" type="number" value="26" min="2" max="300"></label>
+   <label>MACD信号线<input id="macd-signal" type="number" value="9" min="1" max="300"></label>
+  </div></details>
  </form>
  <div id="market-info" class="hint"></div>
- <div class="chart-terminal"><div id="chart-readout"></div><div id="chart-indicators"></div><div id="price-chart" role="img" aria-label="K线、均线、成交量和MACD联动图"></div></div>
+ <div class="stock-overview"><div class="stock-chart-area"><div class="chart-terminal"><div id="chart-readout"></div><div id="chart-indicators"></div><div id="price-chart" role="img" aria-label="K线、均线、成交量和MACD联动图"></div></div>
  <div class="actions chart-actions"><span id="chart-window-note" class="hint"></span><button type="button" id="chart-recent">最近120根</button><button type="button" id="chart-fit">显示全部</button></div>
- <p id="market-note" class="hint"></p><h3>成交明细</h3><div id="market-results" class="table-wrap"></div>
+ <p id="market-note" class="hint"></p></div>
+ <aside class="stock-finance" aria-label="主要财务数据"><h3>主要财务数据</h3><div id="stock-finance-info" class="hint"></div><div id="stock-finance-metrics">查询股票后显示。</div></aside></div>
+ <section class="stock-text-section" aria-label="公司文字资料">
+  <div class="panel-head"><h3>公司与经营</h3><button id="stock-text-refresh" type="button" disabled>更新文字资料</button></div>
+  <div class="stock-text-tabs" role="tablist" aria-label="资料分类">
+   <button type="button" role="tab" data-stock-text="discussion" aria-selected="true" aria-controls="stock-text-content">经营评述</button>
+   <button type="button" role="tab" data-stock-text="business" aria-selected="false" aria-controls="stock-text-content">主营与产品</button>
+   <button type="button" role="tab" data-stock-text="company" aria-selected="false" aria-controls="stock-text-content">公司资料</button>
+   <button type="button" role="tab" data-stock-text="executives" aria-selected="false" aria-controls="stock-text-content">高管介绍</button>
+  </div>
+  <div id="stock-text-status" class="hint" role="status"></div>
+  <label id="stock-text-period-label" hidden>报告期<select id="stock-text-period" aria-label="经营评述报告期"></select></label>
+  <div id="stock-text-source" class="hint"></div><div id="stock-text-content" role="tabpanel">查询股票后显示。</div>
+ </section>
+ <details class="stock-report-history"><summary>最近财报</summary><div id="stock-financial-history" class="table-wrap"></div></details>
+ <details class="stock-trades"><summary>成交明细</summary><div id="market-results" class="table-wrap"></div>
  <div class="actions market-pager"><span id="market-page-info" class="hint"></span><button type="button" id="market-newest">最新页</button><button type="button" id="market-prev">上一页</button><button type="button" id="market-next">下一页</button><button type="button" id="market-oldest">最早页</button></div>
- </div></section>
+ </details></div></section>
 <section id="graph" class="view"><div class="panel"><h3>公司与产业分类</h3><p>当前提供通达信行业与股票池关联。分类归属不代表上下游或受益关系。</p><form id="graph-form" class="actions"><input id="graph-query" value="晨光生物" aria-label="公司或产业名称"><button class="primary">查询关联</button></form><div id="graph-results"></div></div></section>
 <section id="news" class="view"><div class="panel"><h3>从一条新闻开始</h3><p>粘贴新闻，匹配本地公司与分类，再查看候选股票的技术指标。当前为规则匹配，未接入大模型或自动新闻源。</p><form id="news-form"><label>新闻标题<input id="news-title" required maxlength="500" placeholder="输入包含公司或行业名称的新闻标题"></label><label>新闻正文<textarea id="news-content" rows="6" maxlength="100000" placeholder="粘贴新闻正文…"></textarea></label><label>来源链接<input id="news-url" type="url" placeholder="https://…"></label><button class="primary">关联股票并分析 →</button></form><div id="news-results"></div></div></section>
-</main><script src="/static/vendor/echarts.min.js" defer></script><script src="/static/app.js" defer></script><script src="/static/sync.js" defer></script><script src="/static/market.js" defer></script><script src="/static/multiscreener.js" defer></script></body></html>
+</main><script src="/static/vendor/echarts.min.js" defer></script><script src="/static/app.js" defer></script><script src="/static/sync.js" defer></script><script src="/static/stock-detail.js" defer></script><script src="/static/market.js" defer></script><script src="/static/multiscreener.js" defer></script></body></html>

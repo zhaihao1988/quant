@@ -57,7 +57,7 @@ async def unexpected_error(request,exc):
 @app.get('/')
 def home():
     html=(static/'index.html').read_text(encoding='utf-8')
-    for name in ('style.css','app.js','sync.js','market.js','multiscreener.js'):
+    for name in ('style.css','app.js','sync.js','market.js','stock-detail.js','multiscreener.js'):
         version=hashlib.sha256((static/name).read_bytes()).hexdigest()[:12]
         html=html.replace(f'/static/{name}"',f'/static/{name}?v={version}"')
     return HTMLResponse(html,headers={'Cache-Control':'no-cache'})
@@ -338,3 +338,30 @@ class NewsRequest(BaseModel):
 
 @app.post('/api/news/analyze')
 def news(body:NewsRequest):return services.analyze_news(body.title,body.content,body.source_url)
+
+
+@app.get('/api/stock-detail/{symbol}')
+def stock_detail(symbol:str):
+    from .company_documents import validate_symbol
+    from .fundamentals import metrics_many,latest_reference_date
+    from .financial_service import reports
+    security=validate_symbol(symbol)
+    return {**security,'fundamentals':metrics_many([symbol],latest_reference_date())[symbol],
+            'financials':reports(symbol,6)}
+
+
+@app.get('/api/company-documents/{symbol}')
+def company_documents(symbol:str):
+    from .company_documents import documents
+    return documents(symbol)
+
+
+class CompanyRefreshRequest(BaseModel):
+    force:bool=False
+
+
+@app.post('/api/company-documents/{symbol}/refresh',status_code=202)
+def refresh_company_documents(symbol:str,body:CompanyRefreshRequest):
+    from .company_documents import reserve_refresh
+    job,reused=reserve_refresh(symbol,body.force)
+    return {'id':job,'reused':reused}
