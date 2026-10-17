@@ -18,6 +18,13 @@ const fs=require('node:fs');
    return route.fulfill({json:[]});
   });
   await page.route('**/api/multi-screens/'+id,route=>route.fulfill({json:result}));
+  // The web entry now prepares/syncs before creating the technical task.
+  await page.route('**/api/multi-screens/latest',route=>route.fulfill({json:{effective_date:'2026-10-14'}}));
+  await page.route('**/api/market-prepare',route=>{
+   if(route.request().method()==='POST'){submitted=route.request().postDataJSON().screen;return route.fulfill({json:{id,reused:false},status:202})}
+   return route.fulfill({json:null});
+  });
+  await page.route('**/api/market-prepare/'+id,route=>route.fulfill({json:{id,status:'completed',stage:'mock aligned',screen_id:id,result:{effective_date:'2026-10-14'}}}));
   await page.goto(base,{waitUntil:'networkidle'});await page.click('[data-view="multi"]');
   await page.waitForFunction(()=>document.querySelectorAll('[name="multi-strategy"]').length===7);
   await page.fill('#multi-symbols','300138.SZ');await page.click('#multi-submit');
