@@ -35,7 +35,8 @@ def input_identity(conn,request,effective):
         FROM share_observation WHERE effective_date<=%s""",(effective,)).fetchone()
     code=Path(__file__).parent
     versions={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((code/'legacy_strategies').glob('*.py'))}
-    versions['multiscreener.py']=hashlib.sha256((code/'multiscreener.py').read_bytes()).hexdigest()
+    for name in ('multiscreener.py','services.py','domain.py','corporate_actions.py'):
+        versions[name]=hashlib.sha256((code/name).read_bytes()).hexdigest()
     manifest=clean({'format':1,'date':effective,'scope':scope,'stocks':stocks,'files':files,'bars':bars,'shares':shares,'strategies':versions})
     return digest(manifest),digest(scope),manifest
 

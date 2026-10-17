@@ -242,7 +242,11 @@ async function watchMulti(id,retry=0){
   $('#multi-comparison').textContent=comparison?.available?`与${comparison.previous_date}同方案结果相比：新增${comparison.added.length}只，持续${comparison.retained.length}只，消失${comparison.removed.length}只` : '';
   multiSignals=signals;
   if(signals.length)renderMultiSignals();else{$('#multi-results').innerHTML=`<div class="empty">${multiActive?'选股中，结果会陆续显示。':errors.length?'暂无信号，请查看未计算与错误明细。':'当日没有触发信号，结果照常保存。'}</div>`;multiDisplayedRows=[]}
-  $('#multi-errors').innerHTML=errors.length?table(['证券','策略','问题'],errors.map(e=>[e.symbol||'任务',e.strategy_id||'数据',e.error])):'无错误';
+  const diag=r.diagnostics,issueRows=diag?.rows||errors.map(e=>({...e,label:'未分类',action:'查看原始问题'}));
+  $('#multi-errors').innerHTML=(diag?`<p class="hint">整股未计算 ${diag.whole_stock_uncomputed}只 · 部分策略异常 ${diag.partial_strategy_error_stocks}只 · 历史不足 ${diag.history_short_stocks}只（正常门槛，不计为程序错误）</p><p class="hint">问题来自所选批次，历史记录保留原始信息。代码修复后，重新开始选股将生成新的结果版本。</p>`:'')+
+   (issueRows.length?'<label>问题分类<select id="multi-issue-category"><option value="">全部</option>'+[...new Set(issueRows.map(e=>e.label))].map(label=>`<option>${esc(label)}</option>`).join('')+'</select></label><div id="multi-issue-table"></div>':'无错误');
+  const issueTable=()=>{const selected=$('#multi-issue-category')?.value||'';if($('#multi-issue-table'))$('#multi-issue-table').innerHTML=table(['证券','分类','策略','问题','处理方式'],issueRows.filter(e=>!selected||e.label===selected).map(e=>[e.symbol||'任务',e.label,e.strategy_id||'整股数据',e.error,e.action]))};
+  $('#multi-issue-category')?.addEventListener('change',issueTable);issueTable();
   $('#multi-coverage').innerHTML=out.coverage?.length?table(['证券','日K','周K','月K','起始日','最新日'],out.coverage.map(c=>[c.symbol,c.daily,c.weekly,c.monthly,c.first_date,c.last_date])):'暂无记录';
   $('#multi-export-all').disabled=multiActive;$('#multi-export-filtered').disabled=multiActive;$('#multi-export-json').disabled=!saved;
   $('#multi-archive-retry').hidden=!(r.archive_state==='failed'||r.archive_info?.export_error);

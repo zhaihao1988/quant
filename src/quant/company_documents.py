@@ -1,7 +1,8 @@
 """Versioned public F10 narratives; independent of technical screens and valuations."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date,datetime,timedelta,timezone
-import hashlib,re,time
+import hashlib,re,time,ssl,logging
+from threading import Lock
 from uuid import uuid4
 import httpx
 from bs4 import BeautifulSoup
@@ -9,10 +10,11 @@ from psycopg.types.json import Jsonb
 from .db import connect
 from .services import clean
 
-PARSER_VERSION='ths-f10-v2'
+PARSER_VERSION='ths-f10-v3'
 BASE='https://basic.10jqka.com.cn'
 _executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix='company-documents')
 _last_request=0.0
+_request_lock=Lock()
 
 
 def validate_symbol(symbol):
@@ -38,6 +40,17 @@ def decode_page(body):
     return body.decode(enc,errors='strict'),enc
 
 
+def report_date(raw):
+    value=raw.strip()
+    patterns=(r'(\d{4})-(\d{2})-(\d{2})',r'(\d{4})-(\d{2})(\d{2})',r'(\d{4})(\d{2})-(\d{2})',r'(\d{4})(\d{2})(\d{2})',r'(\d{4})[/.](\d{1,2})[/.](\d{1,2})')
+    for pattern in patterns:
+        match=re.fullmatch(pattern,value)
+        if match:
+            try:return date(*map(int,match.groups())).isoformat()
+            except ValueError as exc:raise ValueError('来源报告期日期无效：'+value) from exc
+    raise ValueError('来源报告期日期格式无法识别：'+value)
+
+
 def parse_page(body,code,page):
     text,encoding=decode_page(body)
     soup=BeautifulSoup(text,'html.parser')
@@ -60,12 +73,13 @@ def parse_page(body,code,page):
             blocks=observe.select('.m_tab_content.m_tab_content2')
             if len(tabs)!=len(blocks):raise ValueError('经营评述日期与正文数量不一致')
             for tab,block in zip(tabs,blocks):
-                report=date.fromisoformat(tab.get_text(strip=True)).isoformat()
+                raw_report=tab.get_text(strip=True)
+                report=report_date(raw_report)
                 full=block.select_one('p.clearfix')
                 paragraph=full if full is not None else block.select_one('p.f14.pr')
                 content=plain(paragraph)
                 content=re.sub(r'(收起▲|查看全部▼)\s*$','',content).strip()
-                add('discussion','董事会经营评述',content,report,is_excerpt=full is None)
+                add('discussion','董事会经营评述',content,report,details={'source_report_date':raw_report},is_excerpt=full is None)
     elif page=='company':
         section=soup.select_one('#detail');fields={}
         if section:
@@ -120,20 +134,34 @@ def save_page(symbol,page,url,body):
 
 
 def fetch_page(symbol,page):
+    for attempt in range(3):
+        try:return _fetch_once(symbol,page)
+        except (httpx.TransportError,ssl.SSLError,TimeoutError,ConnectionError) as exc:
+            if attempt==2:raise
+            logging.getLogger(__name__).warning('资料连接中断，有限重试 %s %s %s',symbol,page,attempt+1)
+            time.sleep((1,3)[attempt])
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in (500,502,503,504) or attempt==2:raise
+            time.sleep((1,3)[attempt])
+
+
+def _fetch_once(symbol,page):
     global _last_request
-    delay=1-(time.monotonic()-_last_request)
-    if delay>0:time.sleep(delay)
-    _last_request=time.monotonic()
+    with _request_lock:
+        delay=1.5-(time.monotonic()-_last_request)
+        if delay>0:time.sleep(delay)
+        _last_request=time.monotonic()
     url=f'{BASE}/{symbol[:6]}/{page}.html'
     headers={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.90 Safari/537.36',
              'Referer':f'https://stockpage.10jqka.com.cn/{symbol[:6]}/'}
     with httpx.Client(timeout=20,follow_redirects=False,headers=headers) as client:
         deadline=time.monotonic()+25
         with client.stream('GET',url) as response:
+            if response.status_code in (500,502,503,504):response.raise_for_status()
             if response.status_code!=200:raise ValueError(f'同花顺返回HTTP {response.status_code}，请稍后重试')
             chunks=[];size=0
             for chunk in response.iter_bytes():
-                if time.monotonic()>deadline:raise ValueError('网页响应过慢，请稍后重试')
+                if time.monotonic()>deadline:raise TimeoutError('网页响应超时，请稍后重试')
                 size+=len(chunk)
                 if size>4_000_000:raise ValueError('网页大小异常，未入库')
                 chunks.append(chunk)

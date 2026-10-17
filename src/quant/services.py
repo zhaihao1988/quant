@@ -68,9 +68,10 @@ def bars(symbol, end=None, limit=500, adjustment='qfq', start=None):
     if not rows:
         return clean({**metadata,'bars':[],'anchor':None,'returned_rows':0,'truncated':False})
     anchor=rows[-1]['trade_date']
-    special=[e for e in events if (e['category'] in (11,12) or e['category']>14) and rows[0]['trade_date']<e['event_date']<=anchor]
+    from .corporate_actions import pending_actions,pending_message
+    special=pending_actions(events,rows[0]['trade_date'],anchor)
     if adjustment=='qfq' and special:
-        raise ValueError('所选区间含尚未支持的扩缩股事件；请选择不复权并单独核验')
+        raise ValueError(pending_message(special))
     if adjustment=='qfq':
         rows=adjust_bars(rows,events,anchor)
     previous=None

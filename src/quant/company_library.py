@@ -51,6 +51,8 @@ def job_status(job_id=None,connection=None):
         row['processed']=sum(row['counts'].get(k,0) for k in ('saved','cached','no_content','failed'))
         row['current']=c.execute("SELECT symbol FROM company_collection_item WHERE job_id=%s AND status='running' ORDER BY symbol",(row['id'],)).fetchall()
         row['errors']=c.execute("SELECT i.symbol,s.name,i.status,i.error FROM company_collection_item i JOIN security s ON s.symbol=i.symbol WHERE job_id=%s AND i.status IN ('failed','no_content') ORDER BY i.symbol LIMIT 50",(row['id'],)).fetchall()
+    from .problem_diagnostics import collection_issue
+    row['errors']=[collection_issue(e) for e in row['errors']]
     return clean(row)
 
 

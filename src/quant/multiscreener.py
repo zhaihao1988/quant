@@ -113,6 +113,10 @@ def evaluate_stock(symbol, name, as_of, data, selected):
         if cls.__name__ not in selected:continue
         try:
             instance=cls(StrategyContext(None,as_of,{}))
+            monthly=data.get('monthly')
+            if cls.__name__=='MonthlyMAPullbackStrategy' and monthly is not None and not monthly.empty and not any(pd.to_datetime(monthly['date']).dt.date==as_of):
+                evaluations.append({'strategy_id':cls.__name__,'status':'skipped','reason':'缺当前月行情；未使用旧月K线代替筛选日','signals':0,'history_warnings':[]})
+                continue
             raw=instance.run_for_stock(symbol=symbol,current_date=as_of,data=data)
             accepted=[sig for sig in (raw or []) if sig.signal_date==as_of and sig.signal_type!='NO_SIGNAL']
             for sig in accepted:

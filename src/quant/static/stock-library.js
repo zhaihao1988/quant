@@ -7,7 +7,7 @@
   $('#library-start').disabled=!!active;$('#library-pause').hidden=!active;$('#library-pause').disabled=!!job?.pause_requested;
   $('#library-resume').hidden=job?.status!=='paused';$('#library-retry').disabled=!!active;
   $('#library-job').textContent=job?`${states[job.status]} · ${job.processed}/${job.total} · 新入库 ${c.saved||0} · 复用 ${c.cached||0} · 无全文 ${c.no_content||0} · 失败 ${c.failed||0}${job.current?.length?' · '+job.current.map(s=>s.symbol).join('、'):''}${job.message?'｜'+job.message:''}`:'尚未启动全量采集';
-  $('#library-errors').innerHTML=job?.errors?.length?`<summary>失败及来源无全文（前50只）</summary>`+table(['股票','名称','状态','原因'],job.errors.map(e=>[e.symbol,e.name,e.status==='failed'?'失败':'暂无全文',e.error||'—'])):'';
+  $('#library-errors').innerHTML=job?.errors?.length?`<summary>失败及来源无全文（前50只）</summary>`+table(['股票','名称','分类','问题','处理方式'],job.errors.map(e=>[e.symbol,e.name,e.problem_label||e.status,e.error||'—',e.next_action||'稍后重试'])):'';
   $('#library-errors').hidden=!job?.errors?.length;
   clearTimeout(timer);
   if(active)timer=setTimeout(()=>watch().catch(retryWatch),3000);

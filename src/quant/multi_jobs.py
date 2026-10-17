@@ -90,7 +90,8 @@ def snapshot(run_id,view='latest',recover=True,archive_revision=None):
     if view=='archive':
         from .screen_records import archive
         record=archive(run_id,archive_revision)
-        return {**record['payload'],'archive_info':{k:v for k,v in record.items() if k!='payload'}}
+        from .problem_diagnostics import screen_diagnostics
+        return {**record['payload'],'diagnostics':screen_diagnostics(record['payload'].get('result',{}),record['payload'].get('effective_date')),'archive_info':{k:v for k,v in record.items() if k!='payload'}}
     with connect() as conn:
         if recover:_active(conn)
         row=conn.execute('SELECT * FROM multi_screen_run WHERE id=%s',(run_id,)).fetchone()
@@ -105,6 +106,8 @@ def snapshot(run_id,view='latest',recover=True,archive_revision=None):
         row['result']['fundamental_status']='actual_collection_only'
     row['result']['fundamental_reference']='latest_collected'
     row['result']['note']='原7个技术策略条件不变；按用户要求统一附加最新财务参考，明确财务和价格日期，冲突报告隔离。'
+    from .problem_diagnostics import screen_diagnostics
+    row['diagnostics']=screen_diagnostics(row['result'],row['effective_date'])
     row['view']='latest'
     row.pop('input_manifest',None)
     with connect() as conn:
