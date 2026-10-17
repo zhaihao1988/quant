@@ -229,3 +229,10 @@ def test_model_sentence_references_copy_original_punctuation_and_negation():
  assert validated['items'][0]['evidence'][0]['quote']=='公司尚未投产，保持谨慎。'
  result['items'][0]['evidence'][0]['sentence_id']=99
  with pytest.raises(ValueError):events.validate_result(result,evidence)
+
+def test_stock_event_list_shows_one_entry_per_article(isolated_db,monkeypatch):
+ published=(datetime.now(timezone.utc)-timedelta(minutes=1)).isoformat()
+ row={'id':1,'kind':'news','doc_key':'1','content':'尚未确认相关性','published_at':published}
+ monkeypatch.setattr(info,'search',lambda *a,**k:{'profile':'test','evidence':[row,{**row,'id':2,'content':'相同新闻另一个片段'}]})
+ result=events.stock_events('300138.SZ')
+ assert len(result['evidence'])==1 and result['evidence'][0]['id']==1

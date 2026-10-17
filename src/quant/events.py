@@ -125,7 +125,12 @@ def stock_events(symbol,as_of=None,analyze=False):
     found=information.search(stock['name']+' '+code,'news',as_of=cutoff,limit=20)
     rows=[r for r in found['evidence'] if r['published_at'] and datetime.fromisoformat(r['published_at'])>=cutoff-timedelta(days=365)]
     rows.sort(key=lambda r:(stock['name'] in r['content'] or code in r['content'],r['published_at']),reverse=True)
-    evidence=rows[:12]
+    evidence=[];seen=set()
+    for row in rows:
+        identity=(row['kind'],row['doc_key'])
+        if identity in seen:continue
+        seen.add(identity);evidence.append(row)
+        if len(evidence)==12:break
     for row in evidence:
         row['match_type']='名称或代码提及' if stock['name'] in row['content'] or code in row['content'] else '语义候选，关联待核验'
     with connect() as c:
