@@ -125,7 +125,8 @@ def _screen(request: ScreenRequest):
     for symbol,series in by_symbol.items():
         es=by_event.get(symbol,[])
         if request.adjustment=='qfq':
-            if any((e['category'] in (11,12) or e['category']>14) and series[0]['trade_date']<e['event_date']<=effective for e in es):
+            from .corporate_actions import pending_actions
+            if pending_actions(es,series[0]['trade_date'],effective):
                 unsupported+=1;continue
             series=adjust_bars(series,es,effective)
         m=metrics(series,request.breakout_days)

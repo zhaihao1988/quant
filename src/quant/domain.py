@@ -27,8 +27,12 @@ class ScreenRequest(BaseModel):
 
 
 def adjust_bars(bars, events, anchor):
-    """Ordinary TDX affine QFQ; raw volume/amount remain unchanged."""
-    ordered = sorted((e for e in events if e['category']==1 and e['event_date']<=anchor),
+    """TDX affine QFQ plus expand/shrink; raw volume/amount unchanged."""
+    from .corporate_actions import pending_actions,pending_message
+    if not bars:return []
+    pending=pending_actions(events,bars[0]['trade_date'],anchor)
+    if pending:raise ValueError(pending_message(pending))
+    ordered = sorted((e for e in events if e['category'] in (1,11) and e['event_date']<=anchor),
                      key=lambda e:e['event_date'], reverse=True)
     a,b = Decimal(1),Decimal(0)
     i, result = 0,[]
@@ -36,6 +40,10 @@ def adjust_bars(bars, events, anchor):
         row = dict(source)
         while i < len(ordered) and ordered[i]['event_date'] > row['trade_date']:
             e = ordered[i]
+            if e['category']==11:
+                a /= Decimal(str(e['c3']))
+                i += 1
+                continue
             div,price,bonus,rights = (Decimal(str(e[k])) for k in ('c1','c2','c3','c4'))
             divisor = (Decimal(10)+bonus+rights)/10
             if divisor <= 0:
