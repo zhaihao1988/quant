@@ -44,7 +44,9 @@
   documents=incoming.documents;refreshState=incoming.refresh;
   const active=refreshState&&['queued','running'].includes(refreshState.status);
   $('#stock-text-refresh').disabled=!!active;
-  $('#stock-text-status').textContent=active?(refreshState.status==='queued'?'资料等待更新…':'正在更新同花顺资料…'):refreshState?.error?`${refreshState.error}；已有资料保留。`:refreshState?.finished_at?`最近核对 ${when(refreshState.finished_at)}`:'首次查看时自动获取并保存。';
+  const stored=documents.filter(d=>d.kind==='discussion').length;
+  const savedLabel=stored?`${stored}期经营评述已入库 · `:'';
+  $('#stock-text-status').textContent=savedLabel+(active?(refreshState.status==='queued'?'资料等待更新…':'正在更新同花顺资料…'):refreshState?.error?`${refreshState.error}；已有资料保留。`:refreshState?.finished_at?`最近核对 ${when(refreshState.finished_at)}`:documents.length?'正在展示本地资料，可手动更新。':'首次查看时自动获取并保存。');
   renderText();clearTimeout(poll);
   if(active)poll=setTimeout(()=>loadText(current,false,token).catch(e=>textError(current,e,token)),1500);
   else if(auto&&incoming.auto_refresh_due)await refreshText(current,false,token);
