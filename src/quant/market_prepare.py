@@ -9,12 +9,15 @@ from .sessions import choose_session,market_session
 from .multiscreener import MultiScreenRequest
 from . import ingest,multi_jobs,sync_status
 from .tdx.readers import stable_bytes
+from .trade_calendar import expected_trade_date
+from . import sessions
+import time
 
 RESERVE_LOCK=779936
 WORKER_LOCK=779937
 
 
-def reserve(parameters=None):
+def reserve(parameters=None,force=False):
     if parameters is not None:
         parameters=MultiScreenRequest.model_validate(parameters).model_dump(mode='json')
         if parameters['as_of'] is not None:raise ValueError('此入口统一使用同步后的最新日期')
@@ -25,25 +28,53 @@ def reserve(parameters=None):
             free=conn.execute('SELECT pg_try_advisory_xact_lock(%s) AS ok',(WORKER_LOCK,)).fetchone()['ok']
             age=(datetime.now(timezone.utc)-old['heartbeat_at']).total_seconds()
             if not free or (old['status']=='queued' and age<120):
-                if old['parameters']==parameters:return str(old['id']),True
+                if old['parameters']==parameters and old['force_recompute']==force:return str(old['id']),True
                 raise ValueError('已有行情核对或同步任务，请等待完成后再提交')
             conn.execute("UPDATE market_prepare_run SET status='interrupted',stage='服务中断，请重新核对',finished_at=now() WHERE id=%s",(old['id'],))
         # Avoid importing into an actively running technical scan.
-        if multi_jobs._active(conn):raise ValueError('已有技术选股运行，请等待完成或先停止，再更新行情')
+        active=multi_jobs._active(conn)
+        if active:
+            linked=conn.execute('SELECT id FROM market_prepare_run WHERE screen_id=%s AND parameters=%s ORDER BY started_at DESC LIMIT 1',(active['id'],Jsonb(parameters))).fetchone() if parameters else None
+            if linked:return str(linked['id']),True
+            raise ValueError('已有技术选股运行，请等待完成或先停止，再更新行情')
         job_id=str(uuid4())
-        conn.execute("INSERT INTO market_prepare_run(id,status,parameters) VALUES (%s,'queued',%s)",(job_id,Jsonb(parameters) if parameters is not None else None))
+        conn.execute("INSERT INTO market_prepare_run(id,status,parameters,force_recompute) VALUES (%s,'queued',%s,%s)",(job_id,Jsonb(parameters) if parameters is not None else None,force))
     return job_id,False
 
 
 def status(job_id=None):
     with connect() as conn:
         row=conn.execute('SELECT * FROM market_prepare_run WHERE id=%s',(job_id,)).fetchone() if job_id else conn.execute('SELECT * FROM market_prepare_run ORDER BY started_at DESC LIMIT 1').fetchone()
+        if row and row['status'] in ('queued','running'):
+            free=conn.execute('SELECT pg_try_advisory_xact_lock(%s) AS ok',(WORKER_LOCK,)).fetchone()['ok']
+            age=(datetime.now(timezone.utc)-row['heartbeat_at']).total_seconds()
+            if free and (row['status']=='running' or age>120):
+                conn.execute("UPDATE market_prepare_run SET status='interrupted',stage='已中断，可重新开始',finished_at=now() WHERE id=%s",(row['id'],))
+                row.update(status='interrupted',stage='已中断，可重新开始')
         if row and row['import_id']:
             row['import_progress']=conn.execute('SELECT status,stage,processed,total,changed_rows,skipped,errors FROM import_run WHERE id=%s',(row['import_id'],)).fetchone()
+    if row and row['screen_id']:
+        with connect() as conn:
+            multi_jobs._active(conn)
+            screen=conn.execute('SELECT status,total,processed,archive_state,archive_error FROM multi_screen_run WHERE id=%s',(row['screen_id'],)).fetchone()
+        row['prepare_status']=row['status'];row['screen_progress']={k:screen[k] for k in ('status','total','processed','archive_state','archive_error')}
+        row['status']=screen['status']
+        row['stage']='正在选股' if screen['status'] in ('queued','running') else '已中断或停止' if screen['status'] in ('cancelled','interrupted','failed') else '正在归档' if screen['archive_state']=='pending' else '归档失败，可补存' if screen['archive_state']=='failed' else '已完成，有失败项' if screen['status']=='partial' else '已完成并归档'
+        if screen['archive_state']=='pending':row['status']='running'
+        if screen['archive_state']=='failed' and screen['status'] in ('completed','partial'):row['status']='archive_failed'
     return clean(row) if row else None
 
 
-def inspect_sources():
+def cancel(job_id):
+    with connect() as conn:
+        row=conn.execute('UPDATE market_prepare_run SET cancel_requested=true WHERE id=%s RETURNING import_id,screen_id',(job_id,)).fetchone()
+        if not row:raise ValueError('任务不存在')
+        if row['import_id']:conn.execute('UPDATE import_run SET cancel_requested=true WHERE id=%s',(row['import_id'],))
+    if row['screen_id']:multi_jobs.cancel(row['screen_id'])
+    return {'requested':True}
+
+
+def inspect_sources(require_latest=False):
     if not sync_status.scan_sources():raise ValueError('源文件核对未完成或已有核对运行，请稍后重试')
     with connect() as conn:
         rows=conn.execute('SELECT symbol,state,local_date,db_date,source_mtime_ns FROM source_inventory ORDER BY symbol').fetchall()
@@ -54,12 +85,19 @@ def inspect_sources():
     dates={}
     for row in rows:
         if row['local_date']:dates[row['local_date']]=dates.get(row['local_date'],0)+1
+    newest=max(dates);total=sum(dates.values());ratio=dates[newest]/total
+    if ratio<0.8:raise ValueError(f'最新日期{newest}仅{dates[newest]}/{total}份文件就绪，请完成下载；不会退回旧日期选股')
     local_session=choose_session([{'trade_date':d,'securities':n} for d,n in dates.items()])
-    if not local_session:raise ValueError('本地行情尚未满足盘后完整性要求，请等待下载完成')
+    if not local_session or local_session['trade_date']!=newest:raise ValueError('最新行情尚未满足盘后完整性要求，请等待下载完成')
+    expected=expected_trade_date()
+    if require_latest and expected and newest!=expected:raise ValueError(f'应使用{expected}的盘后数据，本地为{newest}，请先完成通达信下载')
     return rows,{'counts':counts,'local_date':max(dates).isoformat(),
                  'target_date':local_session['trade_date'].isoformat(),
                  'db_date':max((r['db_date'] for r in rows if r['db_date']),default=None),
-                 'missing_files':counts.get('missing',0),'older_files':counts.get('older',0)}
+                 'missing_files':counts.get('missing',0),'older_files':counts.get('older',0),
+                 'not_updated_files':total-dates[newest],'coverage_ratio':ratio,
+                 'expected_date':str(expected) if expected else None,
+                 'calendar_note':None if expected else '当前年份交易日历尚未核验，仅按文件日期判断'}
 
 
 def run(job_id):
@@ -74,12 +112,22 @@ def run(job_id):
             with connect() as conn:
                 for key,value in fields.items():
                     conn.execute(f'UPDATE market_prepare_run SET {key}=%s,heartbeat_at=now() WHERE id=%s',(Jsonb(clean(value)) if key=='result' else value,job_id))
+        def check_cancel():
+            with connect() as conn:stopped=conn.execute('SELECT cancel_requested FROM market_prepare_run WHERE id=%s',(job_id,)).fetchone()['cancel_requested']
+            if stopped:raise InterruptedError('已停止，已入库内容保留')
+        def inspect(require_latest):
+            for attempt in range(3):
+                check_cancel()
+                try:return inspect_sources(require_latest)
+                except ValueError as exc:
+                    if attempt==2 or not any(s in str(exc) for s in ('写入','已有核对运行','核对未完成')):raise
+                    update(stage='等待下载完成后重新检查');time.sleep(2)
         try:
             with connect() as conn:
                 job=conn.execute('SELECT * FROM market_prepare_run WHERE id=%s',(job_id,)).fetchone()
             if not job or job['status']!='queued':return
             update(status='running',stage='核对本地交易日期、文件时间戳和数据库')
-            rows,before=inspect_sources();update(result={'before':before})
+            rows,before=inspect(job['parameters'] is not None);update(result={'before':before})
             pending=[r['symbol'] for r in rows if r['state'] in ('new','changed')]
             # Ex-rights inputs can change independently of daily bars.
             gbbq=settings().tdx_root/'T0002/hq_cache/gbbq'
@@ -89,6 +137,7 @@ def run(job_id):
             if not pending and (not old or old['sha256']!=digest):
                 pending=[r['symbol'] for r in rows if r['state']=='aligned']
             if pending:
+                check_cancel()
                 import_id,reused=ingest.reserve_run(pending,'incremental')
                 if reused:raise ValueError('已有行情同步运行，请等待完成后重新核对选股')
                 update(import_id=import_id,stage=f'增量同步{len(pending)}份A股日线')
@@ -98,7 +147,7 @@ def run(job_id):
                 if imported['status']!='completed':
                     raise ValueError('行情同步未全部成功，未启动选股：'+'；'.join(imported['errors'][:3]))
             update(stage='同步后再次核对日期与文件变化')
-            _,after=inspect_sources()
+            _,after=inspect(job['parameters'] is not None)
             if after['counts'].get('new') or after['counts'].get('changed'):
                 raise ValueError('核对发现仍有未同步或同步期间变化的日线，请重新更新；未启动选股')
             with connect() as conn:session=market_session(conn)
@@ -107,15 +156,34 @@ def run(job_id):
             result={'before':before,'after':after,'effective_date':session['trade_date'].isoformat(),
                     'synced_files':len(pending),'note':'缺少源文件及本地较旧文件保留原数据，不用旧文件覆盖；缺行情股票仍由策略报告。'}
             if job['parameters'] is not None:
+                update(stage='更新股本与已下载财务资料',result=result)
+                auxiliary={}
+                root=settings().tdx_root
+                if (root/'T0002/hq_cache/base.dbf').is_file():
+                    try:
+                        from .capital_ingest import import_capital
+                        auxiliary['capital']=import_capital()
+                    except Exception as exc:auxiliary['capital_warning']=str(exc)
+                if any((root/'vipdoc/cw').glob('gpcw????????.*')):
+                    try:
+                        from .financial_ingest import import_financials
+                        financial=import_financials()
+                        auxiliary['financials']={'status':financial['status'],'records':financial['reports'],'errors':financial['errors']}
+                    except Exception as exc:auxiliary['financial_warning']=str(exc)
+                result['auxiliary']=auxiliary
+                check_cancel()
                 update(stage='行情已对齐，创建最新日期选股',result=result)
-                screen_id,reused=multi_jobs.reserve(MultiScreenRequest.model_validate(job['parameters']))
-                if reused:raise ValueError('已有选股任务运行，请查看任务记录')
+                screen_id,reused=multi_jobs.reserve(MultiScreenRequest.model_validate(job['parameters']),reuse_completed=True,force=job['force_recompute'])
+                result['reused_result']=reused
                 update(screen_id=screen_id)
             update(status='completed',stage='已对齐，已启动选股' if screen_id else '行情更新完成',result=result)
             with connect() as conn:conn.execute('UPDATE market_prepare_run SET finished_at=now() WHERE id=%s',(job_id,))
             ready=True
+        except InterruptedError as exc:
+            screen_id=None;update(status='cancelled',stage='已停止',error=str(exc))
+            with connect() as conn:conn.execute('UPDATE market_prepare_run SET finished_at=now() WHERE id=%s',(job_id,))
         except Exception as exc:
-            update(status='failed',stage='核对或更新未完成，未启动选股',error=f'{type(exc).__name__}: {exc}')
+            update(status='failed',stage='检查未完成，未启动选股',error=str(exc))
             with connect() as conn:conn.execute('UPDATE market_prepare_run SET finished_at=now() WHERE id=%s',(job_id,))
         finally:
             worker.execute('SELECT pg_advisory_unlock(%s)',(WORKER_LOCK,));worker.commit()

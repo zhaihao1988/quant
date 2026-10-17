@@ -14,6 +14,8 @@ def main():
     financial=sub.add_parser('import-financials');financial.add_argument('--directory')
     sub.add_parser('audit-financials')
     sub.add_parser('refresh-fundamentals')
+    sub.add_parser('backup-db')
+    calendar=sub.add_parser('import-calendar');calendar.add_argument('path')
     sub.add_parser('serve')
     mcp=sub.add_parser('mcp');mcp.add_argument('--transport',choices=['stdio','streamable-http'],default='stdio')
     args=parser.parse_args()
@@ -40,6 +42,12 @@ def main():
         if not reused:run_refresh(run_id)
         result=status();print(json.dumps(result,ensure_ascii=False,default=str,indent=2))
         if result['status']!='completed':raise SystemExit(1)
+    elif args.command=='backup-db':
+        from .screen_records import backup_database
+        print(json.dumps(backup_database(),ensure_ascii=False))
+    elif args.command=='import-calendar':
+        from .trade_calendar import import_calendar
+        print(json.dumps(import_calendar(args.path),ensure_ascii=False))
     elif args.command=='audit-financials':
         from .financial_review import quarantine_existing
         print(json.dumps(quarantine_existing(),ensure_ascii=False,indent=2))

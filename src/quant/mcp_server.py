@@ -52,16 +52,16 @@ def create_server():
         from threading import Thread
         from .multiscreener import MultiScreenRequest
         from .multi_jobs import reserve,run_job
-        run_id,reused=reserve(MultiScreenRequest.model_validate(parameters))
+        run_id,reused=reserve(MultiScreenRequest.model_validate(parameters),reuse_completed=True)
         if not reused:Thread(target=run_job,args=(run_id,),daemon=True).start()
         return {'id':run_id,'reused':reused}
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    def multi_screen_status(run_id:str) -> dict:
-        """查询多策略任务进度、技术信号、数据覆盖和错误。"""
+    def multi_screen_status(run_id:str,view:str='latest') -> dict:
+        """查询多策略进度与结果。latest附加最新财务，archive读取固定当次归档；旧记录不补造财务。"""
         from uuid import UUID
         from .multi_jobs import snapshot
-        return snapshot(UUID(run_id))
+        return snapshot(UUID(run_id),view)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def industry_graph(query:str) -> dict:

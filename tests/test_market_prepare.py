@@ -1,7 +1,8 @@
 import hashlib
 import struct
 import uuid
-from datetime import date
+from datetime import date,datetime
+from zoneinfo import ZoneInfo
 import pytest
 from fastapi.testclient import TestClient
 from test_integration import isolated_db
@@ -15,6 +16,8 @@ def record(day,close=1100):
 
 @pytest.fixture
 def source(isolated_db,tmp_path,monkeypatch):
+    # Historic fixture data is evaluated in its own date context, not today's download check.
+    monkeypatch.setattr('quant.sessions.china_now',lambda:datetime(2020,10,9,18,tzinfo=ZoneInfo('Asia/Shanghai')))
     key=1000000+uuid.uuid4().int%1000000000
     monkeypatch.setattr(jobs,'RESERVE_LOCK',key)
     monkeypatch.setattr(jobs,'WORKER_LOCK',key+1)
@@ -42,7 +45,7 @@ def test_prepare_imports_before_resolving_screen_date_and_deduplicates(source,mo
     assert jobs.reserve(parameters)==(job,True)
     with pytest.raises(ValueError,match='已有行情核对'):jobs.reserve()
     jobs.run(job);result=jobs.status(job)
-    assert result['status']=='completed' and result['result']['before']['db_date']=='2020-10-08'
+    assert result['status']=='running' and result['prepare_status']=='completed' and result['result']['before']['db_date']=='2020-10-08'
     assert result['result']['after']['db_date']=='2020-10-09'
     assert result['result']['effective_date']=='2020-10-09' and executed==[result['screen_id']]
     with connect() as c:
@@ -107,3 +110,25 @@ def test_missing_source_is_reported_without_claiming_full_coverage(source):
     result=jobs.status(job)
     assert result['status']=='completed' and result['result']['after']['missing_files']==1
     assert result['result']['synced_files']==0
+
+
+def test_previous_day_cannot_silently_be_used_for_new_screen(source,monkeypatch):
+    monkeypatch.setattr(jobs,'expected_trade_date',lambda:date(2020,10,9))
+    job,_=jobs.reserve({'symbols':['300138.SZ']});jobs.run(job)
+    result=jobs.status(job)
+    assert result['status']=='failed' and '应使用2020-10-09' in result['error']
+    assert result['screen_id'] is None
+
+
+def test_partial_new_date_cannot_fall_back_to_previous_date(source):
+    with connect() as c:c.execute("INSERT INTO security(symbol,code,market,name) VALUES ('600036.SH','600036','SH','部分下载')")
+    other=source.parents[2]/'sh/lday/sh600036.day';other.parent.mkdir(parents=True);other.write_bytes(record(20201008))
+    source.write_bytes(record(20201008)+record(20201009))
+    job,_=jobs.reserve();jobs.run(job)
+    assert jobs.status(job)['status']=='failed' and '不会退回旧日期' in jobs.status(job)['error']
+
+
+def test_stop_during_preparation_preserves_existing_data(source):
+    job,_=jobs.reserve({'symbols':['300138.SZ']});jobs.cancel(job);jobs.run(job)
+    assert jobs.status(job)['status']=='cancelled' and jobs.status(job)['screen_id'] is None
+    with connect() as c:assert c.execute('SELECT count(*) AS n FROM daily_bar').fetchone()['n']==1

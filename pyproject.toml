@@ -19,7 +19,7 @@ quant = "quant.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-quant = ["migrations/*.sql", "static/*", "static/vendor/*", "tdx/*.hex"]
+quant = ["migrations/*.sql", "static/*", "static/vendor/*", "tdx/*.hex", "data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

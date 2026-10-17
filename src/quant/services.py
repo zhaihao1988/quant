@@ -87,6 +87,11 @@ def bars(symbol, end=None, limit=500, adjustment='qfq', start=None):
 
 
 def screen(request: ScreenRequest):
+    from .data_guard import market_access
+    with market_access():return _screen(request)
+
+
+def _screen(request: ScreenRequest):
     with connect() as conn:
         session=market_session(conn,request.as_of)
         if not session:

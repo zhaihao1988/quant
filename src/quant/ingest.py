@@ -232,6 +232,14 @@ def taxonomy(root, known):
 
 
 def run_import(run_id, symbols=None,mode='incremental'):
+    from .data_guard import market_access
+    try:
+        with market_access(write=True):_run_import(run_id,symbols,mode)
+    except ValueError as exc:
+        with connect() as conn:conn.execute("UPDATE import_run SET status='failed',finished_at=now(),errors=%s WHERE id=%s AND status='queued'",(Jsonb([str(exc)]),run_id))
+
+
+def _run_import(run_id, symbols=None,mode='incremental'):
     errors=[];changed=skipped=processed=parsed=0;items=[]
     def save_items():
         if not items:return
@@ -278,7 +286,13 @@ def run_import(run_id, symbols=None,mode='incremental'):
             try:
                 with ThreadPoolExecutor(max_workers=4,thread_name_prefix='tdx') as pool:
                     futures={pool.submit(worker,path,symbol):symbol for symbol,path in paths}
+                    stopped=False
                     for future in as_completed(futures):
+                        if processed%25==0:
+                            with connect() as conn:stopped=conn.execute('SELECT cancel_requested FROM import_run WHERE id=%s',(run_id,)).fetchone()['cancel_requested']
+                            if stopped:
+                                for pending in futures:pending.cancel()
+                                break
                         symbol=futures[future]
                         try:
                             result=future.result()
@@ -295,7 +309,7 @@ def run_import(run_id, symbols=None,mode='incremental'):
                             log.info('Import %d/%d; changed=%d; errors=%d',processed,len(paths),changed,len(errors))
             finally:
                 for conn in connections:conn.close()
-            progress(run_id,status='partial' if errors else 'completed',stage='完成',errors=errors)
+            progress(run_id,status='cancelled' if stopped else 'partial' if errors else 'completed',stage='已停止' if stopped else '完成',errors=errors)
         except Exception as exc:
             log.exception('Import task failed')
             progress(run_id,status='failed',errors=errors+[f'{type(exc).__name__}: {str(exc)[:200]}'])

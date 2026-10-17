@@ -13,14 +13,21 @@ const fs=require('node:fs');
   await page.goto('http://127.0.0.1:8765',{waitUntil:'networkidle'});
   await page.click('[data-view="multi"]');
   await page.waitForFunction(()=>document.querySelectorAll('[name="multi-strategy"]').length===7);
-  const previousTask=await page.locator('#multi-summary').getAttribute('data-task-id');
+  await page.click('#multi-settings > summary');
   await page.fill('#multi-symbols','300138 招商银行');
   const started=page.waitForResponse(r=>r.url().endsWith('/api/market-prepare')&&r.request().method()==='POST');
   await page.click('#multi-submit');
   const response=await started,preparation=await response.json();
   if(response.status()!==202)throw Error(JSON.stringify(preparation));
-  await page.waitForFunction(old=>{const s=document.querySelector('#multi-summary');return s.dataset.taskId&&s.dataset.taskId!==old&&['completed','partial','failed'].includes(s.dataset.status)},previousTask,{timeout:300000});
-  const task={id:await page.locator('#multi-summary').getAttribute('data-task-id')};
+  let task=null;
+  for(let attempt=0;attempt<300;attempt++){
+   const prepared=await (await page.request.get('http://127.0.0.1:8765/api/market-prepare/'+preparation.id)).json();
+   if(prepared.screen_id){task={id:prepared.screen_id};break}
+   if(['failed','cancelled','interrupted'].includes(prepared.status))throw Error(JSON.stringify(prepared));
+   await new Promise(resolve=>setTimeout(resolve,1000));
+  }
+  if(!task)throw Error('Market preparation did not create a technical task');
+  await page.waitForFunction(id=>{const s=document.querySelector('#multi-summary');return s.dataset.taskId===id&&['completed','partial','failed'].includes(s.dataset.status)},task.id,{timeout:300000});
   const data=await (await page.request.get('http://127.0.0.1:8765/api/multi-screens/'+task.id)).json();
   if(data.status!=='completed'||data.result.coverage.length!==2)throw Error(JSON.stringify(data.result.errors));
   if(!data.result.coverage.every(s=>s.daily>1000&&s.monthly>30&&s.evaluations.length===7))throw Error('Missing full history or strategy execution');

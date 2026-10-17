@@ -2,9 +2,10 @@ import logging
 import hashlib
 from datetime import date
 from pathlib import Path
+from contextlib import asynccontextmanager
 from uuid import UUID
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
@@ -13,10 +14,23 @@ from .domain import ScreenRequest
 from .ingest import reserve_run,run_import
 from .db import connect
 
-app=FastAPI(title='Quant 本地选股工作台',version='0.1.0')
+@asynccontextmanager
+async def lifespan(app):
+    recover_workflow_state()
+    yield
+
+
+app=FastAPI(title='Quant 本地选股工作台',version='0.1.0',lifespan=lifespan)
 app.add_middleware(TrustedHostMiddleware,allowed_hosts=['127.0.0.1','localhost','testserver'])
 static=Path(__file__).parent/'static'
 app.mount('/static',StaticFiles(directory=static),name='static')
+
+
+def recover_workflow_state():
+    from .multi_jobs import _active
+    from .market_prepare import status
+    with connect() as conn:_active(conn)
+    status()
 
 
 @app.middleware('http')
@@ -174,12 +188,13 @@ def multi_strategies():return strategy_catalog()
 
 class MarketPrepareRequest(BaseModel):
     screen:MultiScreenRequest|None=None
+    force:bool=False
 
 
 @app.post('/api/market-prepare',status_code=202)
 def prepare_market(body:MarketPrepareRequest,tasks:BackgroundTasks):
     from .market_prepare import reserve,run
-    job_id,reused=reserve(body.screen.model_dump(mode='json') if body.screen else None)
+    job_id,reused=reserve(body.screen.model_dump(mode='json') if body.screen else None,body.force)
     if not reused:tasks.add_task(run,job_id)
     return {'id':job_id,'reused':reused}
 
@@ -198,6 +213,25 @@ def market_prepare_status(job_id:UUID):
     return result
 
 
+@app.post('/api/market-prepare/{job_id}/cancel')
+def cancel_market_prepare(job_id:UUID):
+    from .market_prepare import cancel
+    return cancel(job_id)
+
+
+@app.get('/api/multi-screens/history')
+def multi_history(limit:int=Query(20,ge=1,le=100),offset:int=Query(0,ge=0),day:date|None=None,state:str='',scope:str=''):
+    from .multi_jobs import history
+    return history(limit,offset,day,state,scope)
+
+
+@app.get('/api/multi-screens/plans')
+def multi_plans():
+    with connect() as conn:
+        rows=conn.execute('SELECT DISTINCT ON(scope_signature) scope_signature,parameters,effective_date FROM multi_screen_run WHERE scope_signature IS NOT NULL ORDER BY scope_signature,started_at DESC').fetchall()
+    return services.clean(rows)
+
+
 @app.get('/api/multi-screens/latest')
 def multi_latest():
     from .multi_jobs import latest_session
@@ -211,17 +245,56 @@ def multi_recent():
 
 
 @app.post('/api/multi-screens',status_code=202)
-def multi_start(body:MultiScreenRequest,tasks:BackgroundTasks):
+def multi_start(body:MultiScreenRequest,tasks:BackgroundTasks,force:bool=False):
     from .multi_jobs import reserve,run_job
-    run_id,reused=reserve(body)
+    run_id,reused=reserve(body,reuse_completed=True,force=force)
     if not reused:tasks.add_task(run_job,run_id)
     return {'id':run_id,'reused':reused}
 
 
 @app.get('/api/multi-screens/{run_id}')
-def multi_status(run_id:UUID):
+def multi_status(run_id:UUID,view:str='latest',revision:int|None=Query(None,ge=1)):
     from .multi_jobs import snapshot
-    return snapshot(run_id)
+    return snapshot(run_id,view,archive_revision=revision)
+
+
+@app.get('/api/multi-screens/{run_id}/export')
+def multi_export(run_id:UUID,format:str='csv',view:str='archive',revision:int|None=Query(None,ge=1)):
+    from .multi_jobs import snapshot
+    from .screen_records import csv_export
+    if format not in ('csv','json'):raise ValueError('导出格式须为csv或json')
+    payload=snapshot(run_id,view,archive_revision=revision)
+    filename=f'quant-{payload["effective_date"]}-{str(run_id)[:8]}-{view}.{format}'
+    headers={'Content-Disposition':f'attachment; filename="{filename}"'}
+    if format=='csv':return Response(csv_export(payload),media_type='text/csv; charset=utf-8',headers=headers)
+    return JSONResponse(payload,headers=headers)
+
+
+@app.get('/api/multi-screens/{run_id}/progress')
+def multi_progress(run_id:UUID):
+    from .multi_jobs import task_progress
+    return task_progress(run_id)
+
+
+@app.get('/api/multi-screens/{run_id}/archives')
+def multi_archives(run_id:UUID):
+    with connect() as conn:rows=conn.execute("SELECT revision,created_at,payload->>'status' AS status,sha256 FROM screen_archive WHERE run_id=%s ORDER BY revision DESC",(run_id,)).fetchall()
+    return services.clean(rows)
+
+
+@app.post('/api/multi-screens/{run_id}/archive')
+def multi_archive(run_id:UUID):
+    from .screen_records import save_archive,export_archive
+    record=save_archive(run_id);export_archive(run_id,record['revision'])
+    return {'saved':True,'revision':record['revision']}
+
+
+@app.post('/api/multi-screens/{run_id}/retry',status_code=202)
+def multi_retry(run_id:UUID,tasks:BackgroundTasks,workers:int=Query(4,ge=1,le=4)):
+    from .multi_jobs import retry_failed,run_job
+    job=retry_failed(run_id,workers)
+    tasks.add_task(run_job,job)
+    return {'id':job}
 
 
 @app.post('/api/multi-screens/{run_id}/cancel')
@@ -237,6 +310,17 @@ class MultiResumeRequest(BaseModel):
 @app.post('/api/multi-screens/{run_id}/resume',status_code=202)
 def multi_resume(run_id:UUID,body:MultiResumeRequest,tasks:BackgroundTasks):
     from .multi_jobs import resume,run_job
+    with connect() as conn:old=conn.execute('SELECT parameters FROM multi_screen_run WHERE id=%s',(run_id,)).fetchone()
+    if old and old['parameters'].get('as_of') is None:
+        from .market_prepare import inspect_sources
+        from .tdx.readers import stable_bytes
+        from .config import settings
+        _,source=inspect_sources(require_latest=True)
+        if source['counts'].get('new') or source['counts'].get('changed'):
+            raise ValueError('本地行情有更新，请开始新的选股；旧任务结果保留')
+        path=settings().tdx_root/'T0002/hq_cache/gbbq';_,token=stable_bytes(path)
+        with connect() as conn:stored=conn.execute('SELECT sha256 FROM import_file WHERE path=%s',(str(path),)).fetchone()
+        if not stored or stored['sha256']!=token:raise ValueError('权息资料有更新，请开始新的选股')
     task_id=resume(run_id,body.workers)
     tasks.add_task(run_job,task_id)
     return {'id':task_id}

@@ -97,7 +97,8 @@ function renderMultiSignals(){
   const comparison=typeof x==='number'&&typeof y==='number'?x-y:typeof x==='boolean'&&typeof y==='boolean'?Number(x)-Number(y):String(x).localeCompare(String(y),'zh-CN',{numeric:true});
   return multiSort.ascending?comparison:-comparison;
  });
- $('#multi-results').innerHTML='<p class="hint">统一使用最新财务与股本参考，信号日期保持原样。PE为最近年报口径；价格日期单列显示。参考换手率按最新股本计算，非历史当时口径。同比0.10代表10%。列名排序，三角按钮筛选。</p>'+`<div class="multi-filter-summary"><span>显示 ${rows.length} / ${multiSignals.length} 条信号 · ${new Set(rows.map(r=>r.symbol)).size} 只股票 · 财务参考日 ${esc(multiSignals[0]?.financial_reference_date||'未更新')}</span>${Object.keys(multiFilters).length?'<button type="button" id="multi-clear-filters">清除全部筛选</button>':''}</div><div class="table-wrap">`+table(multiColumns.map(c=>c[1]),rows.map(r=>multiColumns.map(c=>multiCell(r,c[0]))))+'</div>'+(rows.length?'':'<p class="hint">没有匹配结果，可清除筛选或放宽条件。</p>');
+ multiDisplayedRows=rows;
+ $('#multi-results').innerHTML=`<div class="multi-filter-summary"><span>显示 ${rows.length} / ${multiSignals.length} 条信号 · 财务参考日 ${esc(multiSignals[0]?.financial_reference_date||'—')} · ${multiView==='archive'?'当次归档':'最新财务'}</span>${Object.keys(multiFilters).length?'<button type="button" id="multi-clear-filters">清除全部筛选</button>':''}</div><div class="table-wrap">`+table(multiColumns.map(c=>c[1]),rows.map(r=>multiColumns.map(c=>multiCell(r,c[0]))))+'</div>'+(rows.length?'':'<p class="hint">没有匹配结果，可清除筛选。</p>');
  $('#multi-results').classList.remove('empty');
  const wrap=$('#multi-results .table-wrap');
  const navigation=document.createElement('div');navigation.className='actions';navigation.setAttribute('aria-label','结果表列导航');
@@ -111,7 +112,8 @@ function renderMultiSignals(){
  navigation.querySelectorAll('[data-multi-jump]').forEach(button=>button.onclick=()=>{
   closeMultiFilter();
   const th=wrap.querySelector(`[data-multi-sort="${button.dataset.multiJump}"]`).closest('th');
-  wrap.scrollLeft+=th.getBoundingClientRect().left-wrap.getBoundingClientRect().left;
+  const pinned=[...wrap.querySelectorAll('thead th')].slice(0,2).reduce((n,e)=>n+e.getBoundingClientRect().width,0);
+  wrap.scrollLeft=button.dataset.multiJump==='symbol'?0:Math.max(0,wrap.scrollLeft+th.getBoundingClientRect().left-wrap.getBoundingClientRect().left-pinned);
   scroll.scrollLeft=wrap.scrollLeft;
  });
  document.querySelectorAll('#multi-results th').forEach((th,i)=>{
@@ -124,129 +126,231 @@ function renderMultiSignals(){
  multiTableObserver=new ResizeObserver(syncSize);multiTableObserver.observe(wrap);
  positionMultiFilter();
 }
-const multiState={queued:'排队中',running:'运行中',completed:'已完成',partial:'完成，存在数据或执行问题',cancelled:'已停止',interrupted:'服务中断，请重新运行',failed:'失败'};
-async function loadMulti(){
- loadFundamentalStatus().catch(e=>message(e.message));
- try{
-  await loadMultiLatestDate();
-  if(!multiCatalog){
-   multiCatalog=await api('/multi-screens/strategies');
-   $('#multi-strategies').innerHTML=multiCatalog.strategies.map(s=>`<label class="check"><input type="checkbox" name="multi-strategy" value="${esc(s.id)}" checked> ${esc(s.name)}</label>`).join('');
-   $('#multi-parameters').textContent=JSON.stringify(multiCatalog.strategies,null,2);
-   const pools=await api('/taxonomies');$('#multi-pool').innerHTML='<option value="">全部本地 A 股</option>'+pools.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} · ${p.members}只</option>`).join('');
-  }
-  const runs=await api('/multi-screens');
-  $('#multi-history').innerHTML=runs.map(r=>`<button type="button" data-multi-id="${esc(r.id)}">${esc(r.effective_date)} · ${esc(multiState[r.status]||r.status)} · ${r.processed}/${r.total} · ${r.signals}条信号</button>`).join(' ')||'尚无任务';
-  document.querySelectorAll('[data-multi-id]').forEach(b=>b.onclick=()=>watchMulti(b.dataset.multiId));
-  if(!multiTask&&!multiStarting&&runs.length)await watchMulti(runs[0].id);
-  await watchMarketPrepare();
- }catch(e){message(e.message)}
+const multiState={queued:'等待开始',running:'选股中',completed:'已完成',partial:'已完成，有失败项',cancelled:'已停止',interrupted:'已中断',failed:'失败'};
+let multiSnapshot=null,multiActive=false,multiHistoryOffset=0,multiWatchGeneration=0,multiLoadTimer=null;
+let multiDisplayedRows=[],multiView='latest',multiPoolNames={};
+let multiRunningId=null,multiProgressTimer=null,marketAttachedScreen=null;
+let multiExpectedDate=null,multiCalendarNote=null;
+const multiPrefsKey='quant.multi.settings.v1';
+function applyMultiButtons(){
+ const busy=multiActive||multiPreparing||multiStarting||!!multiRunningId;
+ $('#multi-submit').disabled=busy;$('#multi-market-update').disabled=busy;$('#multi-force').disabled=busy;
+ $('#multi-stop').hidden=!busy;$('#multi-stop').disabled=false;
+ const r=multiSnapshot,outdated=r&&((multiLatestDate&&r.effective_date!==multiLatestDate)||(multiExpectedDate&&r.effective_date!==multiExpectedDate));
+ $('#multi-resume').hidden=busy||!r||!r.input_signature||!['cancelled','interrupted','failed'].includes(r.status);
+ $('#multi-resume').disabled=!!outdated;$('#multi-resume').title=outdated?'数据日期已更新，请开始新的选股':'';
+ $('#multi-retry').hidden=busy||!r||!r.input_signature||!['partial','failed'].includes(r.status);
+ $('#multi-retry').disabled=!!outdated;
+ $('#multi-result-view').disabled=multiActive;
 }
-async function watchMulti(id){
- if(multiTask!==id){closeMultiFilter();multiFilters={}}
- multiTask=id;clearTimeout(multiTimer);
- try{
-  const r=await api('/multi-screens/'+id);if(multiTask!==id||multiStarting)return;
-  const active=['queued','running'].includes(r.status),out=r.result||{},signals=out.signals||[],errors=out.errors||[];
-  $('#multi-submit').disabled=active||multiPreparing;$('#multi-stop').disabled=!active;
-  $('#multi-market-update').disabled=active||multiPreparing;
-  const outdated=!!multiLatestDate&&r.effective_date!==multiLatestDate;
-  $('#multi-resume').disabled=multiPreparing||outdated||!['cancelled','interrupted','failed'].includes(r.status);
-  $('#multi-resume').title=outdated?'旧任务日期早于最新数据，请运行最新日期的新任务':'';
-  $('#multi-summary').textContent=`${r.effective_date} · ${multiState[r.status]||r.status} · 已扫描 ${r.processed}/${r.total} · ${new Set(signals.map(s=>s.symbol)).size}只股票 / ${signals.length}条信号 ${r.current_symbol?'· '+r.current_symbol:''}`;
-  $('#multi-summary').dataset.taskId=id;$('#multi-summary').dataset.status=r.status;
-  const execution=out.execution;$('#multi-execution').textContent=execution?`${execution.workers>1?execution.workers+'个进程并行':'串行'} · 已保留此前 ${execution.resumed_after||0} 只股票结果`:'原串行任务';
-  if(outdated)$('#multi-execution').textContent+=` · 当前展示旧日期任务；新选股自动使用 ${multiLatestDate}`;
-  multiSignals=signals;
-  if(signals.length)renderMultiSignals();else $('#multi-results').innerHTML=`<div class="empty">${active?'正在扫描，信号会陆续展示。':'当前任务没有当日技术信号，请同时核对数据覆盖与错误。'}</div>`;
-  $('#multi-errors').innerHTML=errors.length?table(['证券','策略','问题'],errors.map(e=>[e.symbol||'任务',e.strategy_id||'数据读取',e.error])):'暂无数据或执行错误';
-  $('#multi-coverage').innerHTML=out.coverage?.length?table(['证券','日K','周K','月K','起始日','最新日','历史检查提示'],out.coverage.map(c=>[c.symbol,c.daily,c.weekly,c.monthly,c.first_date,c.last_date,(c.evaluations||[]).flatMap(e=>e.history_warnings||[]).join('；')||'—'])):'尚无覆盖记录';
-  if(out.fatal_error)message(out.fatal_error);
-  if(active)multiTimer=setTimeout(()=>watchMulti(id),2000);
- }catch(e){message(e.message);$('#multi-submit').disabled=false}
+function rememberMultiSettings(){
+ const data={symbols:$('#multi-symbols').value,pool:$('#multi-pool').value,workers:$('#multi-workers').value,
+  strategies:[...document.querySelectorAll('[name="multi-strategy"]:checked')].map(x=>x.value)};
+ try{localStorage.setItem(multiPrefsKey,JSON.stringify(data))}catch{}
+ const scope=data.symbols.trim()?'指定股票：'+data.symbols.trim():multiPoolNames[data.pool]||'全部A股';
+ $('#multi-settings-summary').textContent=`选股设置 · ${scope} · ${data.strategies.length}个策略`;
 }
-document.querySelector('[data-view="multi"]').addEventListener('click',loadMulti);
+function restoreMultiSettings(){
+ try{
+  const p=JSON.parse(localStorage.getItem(multiPrefsKey)||'null');if(!p)return;
+  $('#multi-symbols').value=typeof p.symbols==='string'?p.symbols:'';
+  if([...$('#multi-pool').options].some(o=>o.value===p.pool))$('#multi-pool').value=p.pool;
+  if(['1','2','4'].includes(p.workers))$('#multi-workers').value=p.workers;
+  if(Array.isArray(p.strategies))document.querySelectorAll('[name="multi-strategy"]').forEach(x=>x.checked=p.strategies.includes(x.value));
+ }catch{}
+}
 async function loadMultiLatestDate(){
- const latest=await api('/multi-screens/latest');multiLatestDate=latest.effective_date;
- $('#multi-date').value=multiLatestDate||'暂无可用盘后数据';
+ const r=await api('/multi-screens/latest');multiLatestDate=r.effective_date;
+ multiExpectedDate=r.expected_date;multiCalendarNote=r.calendar_note;
+ $('#multi-date').value=multiLatestDate||'暂无行情';applyMultiButtons();
 }
-$('#multi-form').onsubmit=async e=>{
- e.preventDefault();multiStarting=true;clearTimeout(multiTimer);$('#multi-submit').disabled=true;message('');
+async function loadMultiHistory(){
+ const params=new URLSearchParams({limit:20,offset:multiHistoryOffset,day:$('#multi-history-date').value,state:$('#multi-history-state').value,scope:$('#multi-history-scope').value});
+ if(!params.get('day'))params.delete('day');
+ const data=await api('/multi-screens/history?'+params);
+ $('#multi-history').innerHTML=data.items.length?'<table><thead><tr><th>交易日</th><th>版本</th><th>状态</th><th>进度</th><th>信号</th><th>完成时间</th><th></th></tr></thead><tbody>'+data.items.map(r=>`<tr><td>${esc(r.effective_date)}</td><td>V${r.version}</td><td>${esc(multiState[r.status]||r.status)}${r.archive_state==='saved'?' · 已归档':r.archive_state==='legacy'?' · 旧记录':''}</td><td>${r.processed}/${r.total}</td><td>${r.signals}</td><td>${esc(r.finished_at?new Date(r.finished_at).toLocaleString():'—')}</td><td><button type="button" data-multi-id="${r.id}">查看</button></td></tr>`).join('')+'</tbody></table>':'暂无记录';
+ document.querySelectorAll('[data-multi-id]').forEach(b=>b.onclick=()=>{multiStarting=false;multiView='latest';$('#multi-result-view').value='latest';watchMulti(b.dataset.multiId)});
+ $('#multi-history-page').textContent=`${data.total?multiHistoryOffset+1:0}—${Math.min(multiHistoryOffset+20,data.total)} / ${data.total}`;
+ $('#multi-history-prev').disabled=multiHistoryOffset===0;$('#multi-history-next').disabled=multiHistoryOffset+20>=data.total;
+ return data.items;
+}
+async function loadMultiPlans(){
+ const previous=$('#multi-history-scope').value,plans=await api('/multi-screens/plans');
+ $('#multi-history-scope').innerHTML='<option value="">全部方案</option>'+plans.map(p=>{
+  const s=p.parameters,label=(s.symbols.length?'指定'+s.symbols.length+'只':multiPoolNames[s.taxonomy_id]||'全部A股')+' · '+s.strategies.length+'个策略';
+  return `<option value="${p.scope_signature}">${esc(label)}</option>`;
+ }).join('');
+ if(plans.some(p=>p.scope_signature===previous))$('#multi-history-scope').value=previous;
+}
+async function loadMulti(){
+ clearTimeout(multiLoadTimer);
+ try{
+  if(!multiCatalog){
+   const [catalog,pools]=await Promise.all([api('/multi-screens/strategies'),api('/taxonomies')]);multiCatalog=catalog;
+   $('#multi-strategies').innerHTML=catalog.strategies.map(s=>`<label class="check"><input type="checkbox" name="multi-strategy" value="${esc(s.id)}" checked> ${esc(s.name)}</label>`).join('');
+   $('#multi-parameters').textContent=JSON.stringify(catalog.strategies.map(s=>({name:s.name,parameters:s.parameters})),null,2);
+   multiPoolNames=Object.fromEntries(pools.map(p=>[p.id,p.name]));
+   $('#multi-pool').innerHTML='<option value="">全部本地 A 股</option>'+pools.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} · ${p.members}只</option>`).join('');
+   restoreMultiSettings();rememberMultiSettings();$('#multi-form').addEventListener('change',rememberMultiSettings);
+  }
+  await loadMultiLatestDate();await loadMultiPlans();const runs=await loadMultiHistory();
+  if(!multiTask&&!multiStarting&&runs.length){
+   const selected=[...document.querySelectorAll('[name="multi-strategy"]:checked')].map(x=>x.value).sort();
+   const input=$('#multi-symbols').value.trim().split(/[,，;；\s]+/).filter(Boolean).map(x=>x.toUpperCase());
+   const matching=r=>{
+    const p=r.parameters;if(!p)return false;
+    const symbols=(p.symbols||[]).map(x=>x.toUpperCase());
+    const sameSymbols=input.length===symbols.length&&input.every(x=>symbols.some(s=>s===x||s.split('.')[0]===x));
+    return sameSymbols&&(p.taxonomy_id||'')===$('#multi-pool').value&&JSON.stringify([...(p.strategies||[])].sort())===JSON.stringify(selected);
+   };
+   const candidates=runs.filter(matching);
+   const r=runs.find(x=>['queued','running'].includes(x.status))||candidates.find(x=>['completed','partial'].includes(x.status))||candidates[0]||runs.find(x=>['completed','partial'].includes(x.status)&&x.archive_state==='saved')||runs[0];
+   await watchMulti(r.id);
+  }
+  await watchMarketPrepare();
+ }catch(e){message('连接中断，正在重连。'+e.message);multiLoadTimer=setTimeout(loadMulti,5000)}
+}
+async function watchMulti(id,retry=0){
+ if(multiTask!==id){closeMultiFilter();multiFilters={};$('#multi-archive-version').value=''}
+ multiTask=id;clearTimeout(multiTimer);const generation=++multiWatchGeneration;
+ try{
+  const revision=multiView==='archive'?$('#multi-archive-version').value:'';
+  const r=await api('/multi-screens/'+id+'?view='+multiView+(revision?'&revision='+revision:''));
+  if(generation!==multiWatchGeneration||multiTask!==id||multiStarting)return;
+  multiSnapshot=r;multiActive=['queued','running'].includes(r.status)||r.archive_state==='pending';const out=r.result||{},signals=out.signals||[],errors=out.errors||[];
+  if(multiActive&&multiRunningId!==id){multiRunningId=id;watchRunProgress(id)}
+  const saved=!!r.archive_info;$('#multi-result-view option[value="archive"]').disabled=!saved;
+  $('#multi-archive-version-label').hidden=multiView!=='archive';
+  $('#multi-summary').textContent=`${r.effective_date} · V${r.version||1} · ${multiState[r.status]||r.status} · ${new Set(signals.map(s=>s.symbol)).size}只股票 / ${signals.length}条信号`;
+  $('#multi-summary').dataset.taskId=id;$('#multi-summary').dataset.status=r.status;
+  const archiveNote=r.archive_state==='pending'?'正在归档':r.archive_state==='saved'?'已归档':r.archive_state==='failed'?'归档失败，可补存':'旧记录未保存当次财务';
+  const scope=r.parameters?.symbols?.length?'指定'+r.parameters.symbols.length+'只股票':multiPoolNames[r.parameters?.taxonomy_id]||'全部A股';
+  $('#multi-execution').textContent=`${scope} · 已扫描 ${r.processed}/${r.total} · ${archiveNote}`+
+   (r.archive_info?.export_error?' · '+r.archive_info.export_error:'')+
+   (r.archive_error?' · '+r.archive_error:'')+
+   (multiLatestDate&&r.effective_date!==multiLatestDate?` · 这是历史结果，当前数据为${multiLatestDate}`:'');
+  const comparison=r.comparison||r.archive_info?.comparison;
+  $('#multi-comparison').textContent=comparison?.available?`与${comparison.previous_date}同方案结果相比：新增${comparison.added.length}只，持续${comparison.retained.length}只，消失${comparison.removed.length}只` : '';
+  multiSignals=signals;
+  if(signals.length)renderMultiSignals();else{$('#multi-results').innerHTML=`<div class="empty">${multiActive?'选股中，结果会陆续显示。':errors.length?'暂无信号，请查看未计算与错误明细。':'当日没有触发信号，结果照常保存。'}</div>`;multiDisplayedRows=[]}
+  $('#multi-errors').innerHTML=errors.length?table(['证券','策略','问题'],errors.map(e=>[e.symbol||'任务',e.strategy_id||'数据',e.error])):'无错误';
+  $('#multi-coverage').innerHTML=out.coverage?.length?table(['证券','日K','周K','月K','起始日','最新日'],out.coverage.map(c=>[c.symbol,c.daily,c.weekly,c.monthly,c.first_date,c.last_date])):'暂无记录';
+  $('#multi-export-all').disabled=multiActive;$('#multi-export-filtered').disabled=multiActive;$('#multi-export-json').disabled=!saved;
+  $('#multi-archive-retry').hidden=!(r.archive_state==='failed'||r.archive_info?.export_error);
+  applyMultiButtons();
+  if(out.fatal_error)message(out.fatal_error);
+  if(multiActive)multiTimer=setTimeout(()=>watchMulti(id),5000);
+ }catch(e){
+  if(generation!==multiWatchGeneration)return;
+  if(multiView==='archive'&&e.message.includes('没有当次归档')){multiView='latest';$('#multi-result-view').value='latest';message(e.message);return watchMulti(id)}
+  message('连接中断，正在重连；后台任务不受网页断线影响。');multiTimer=setTimeout(()=>watchMulti(id,retry+1),Math.min(10000,2000*(retry+1)));
+ }
+}
+async function submitMulti(force=false){
+ multiStarting=true;marketAttachedScreen=null;applyMultiButtons();message('');rememberMultiSettings();clearTimeout(multiTimer);
  try{
   const symbols=[];
   for(const input of $('#multi-symbols').value.split(/[,，;；\s]+/).filter(Boolean)){
    if(/^\d{6}\.(SH|SZ|BJ)$/i.test(input)){symbols.push(input.toUpperCase());continue}
-   const found=await api('/securities?q='+encodeURIComponent(input));
-   const exact=found.filter(s=>s.code===input||s.name===input||s.symbol.toUpperCase()===input.toUpperCase());
-   if(exact.length!==1)throw Error(`无法唯一确认证券：${input}，请填写代码或完整名称`);
-   symbols.push(exact[0].symbol);
+   const found=await api('/securities?q='+encodeURIComponent(input));const exact=found.filter(s=>s.code===input||s.name===input||s.symbol.toUpperCase()===input.toUpperCase());
+   if(exact.length!==1)throw Error(`无法确定股票：${input}，请填写代码或完整名称`);symbols.push(exact[0].symbol);
   }
-  const body={strategies:[...document.querySelectorAll('[name="multi-strategy"]:checked')].map(i=>i.value),symbols:[...new Set(symbols)],workers:Number($('#multi-workers').value)};
-  // Always let the server resolve the latest session at submission time.
-  if($('#multi-pool').value)body.taxonomy_id=$('#multi-pool').value;
-  const r=await api('/market-prepare',{screen:body});marketPrepareTask=r.id;marketPrepareWasActive=true;await watchMarketPrepare(r.id);
- }catch(e){multiStarting=false;message(e.message);$('#multi-submit').disabled=false}
-};
+  const strategies=[...document.querySelectorAll('[name="multi-strategy"]:checked')].map(x=>x.value);if(!strategies.length)throw Error('请至少选择一个策略');
+  const screen={strategies,symbols:[...new Set(symbols)],workers:Number($('#multi-workers').value)};
+  if($('#multi-pool').value)screen.taxonomy_id=$('#multi-pool').value;
+  multiView='latest';$('#multi-result-view').value='latest';
+  const r=await api('/market-prepare',{screen,force});marketPrepareTask=r.id;marketPrepareWasActive=true;await watchMarketPrepare(r.id);
+ }catch(e){multiStarting=false;applyMultiButtons();message(e.message)}
+}
 async function watchMarketPrepare(id=null){
  clearTimeout(marketPrepareTimer);
- const job=await api('/market-prepare'+(id?'/'+id:''));
- if(!job){$('#multi-market-status').textContent='选股前自动核对通达信日期、修改时间和数据库；有变化先同步，再选股。';return}
- const active=['queued','running'].includes(job.status),p=job.import_progress;
- multiPreparing=active;if(active)marketPrepareTask=job.id;
- $('#multi-market-update').disabled=active||$('#multi-stop').disabled===false;
- if(active){$('#multi-submit').disabled=true;$('#multi-resume').disabled=true}
- const snapshot=job.result?.after||job.result?.before;
- $('#multi-market-status').textContent='行情核对：'+job.stage+
-  (p?` · ${p.processed}/${p.total}份 · 新增/修订${p.changed_rows}行`:'')+
-  (snapshot?` · 通达信${snapshot.local_date||'—'} / 数据库${snapshot.db_date||'—'}`:'')+
-  (job.result?.effective_date?` · 最新选股日${job.result.effective_date}`:'')+
-  (snapshot?.missing_files?` · ${snapshot.missing_files}只缺源文件，保留缺失提示`:'')+
-  (job.error?' · '+job.error:'');
- if(active){marketPrepareWasActive=true;marketPrepareTimer=setTimeout(()=>watchMarketPrepare(job.id).catch(e=>message(e.message)),2000);return}
- if(marketPrepareWasActive||marketPrepareTask===job.id){
-  marketPrepareWasActive=false;marketPrepareTask=null;multiStarting=false;
-  await loadMultiLatestDate();
-  if(job.screen_id)await watchMulti(job.screen_id);
-  else if(multiTask)await watchMulti(multiTask);
-  else $('#multi-submit').disabled=false;
- }
-}
-$('#multi-market-update').onclick=async()=>{
  try{
-  $('#multi-market-update').disabled=true;
-  const r=await api('/market-prepare',{});marketPrepareTask=r.id;marketPrepareWasActive=true;
-  await watchMarketPrepare(r.id);
- }catch(e){$('#multi-market-update').disabled=false;message(e.message)}
-};
-$('#multi-stop').onclick=async()=>{if(multiTask){try{await api('/multi-screens/'+multiTask+'/cancel',{});message('已请求停止，将在当前股票处理结束后停止。')}catch(e){message(e.message)}}};
-$('#multi-refresh').onclick=loadMulti;
-$('#multi-resume').onclick=async()=>{
- if(!multiTask)return;
- multiStarting=true;clearTimeout(multiTimer);$('#multi-resume').disabled=true;
- try{const r=await api('/multi-screens/'+multiTask+'/resume',{workers:Number($('#multi-workers').value)});multiStarting=false;await watchMulti(r.id)}
- catch(e){multiStarting=false;message(e.message);$('#multi-resume').disabled=false}
-};
-
-// A direct link can open the result table without starting another scan.
-if(new URLSearchParams(window.location.search).get('view')==='multi'){
- document.addEventListener('DOMContentLoaded',()=>document.querySelector('[data-view="multi"]').click());
+  const job=await api('/market-prepare'+(id?'/'+id:''));
+  const freshness=multiExpectedDate&&multiLatestDate!==multiExpectedDate?` · 待更新至${multiExpectedDate}`:multiCalendarNote?' · '+multiCalendarNote:'';
+  if(!job){$('#multi-market-status').textContent='开始选股时自动检查并更新行情。'+freshness;return}
+  const active=['queued','running'].includes(job.status),p=job.screen_progress||job.import_progress;
+  multiPreparing=active;marketPrepareTask=job.id;
+  const snapshot=job.result?.after||job.result?.before;
+  const idleStage=['completed','partial'].includes(job.status)?(multiExpectedDate&&multiLatestDate!==multiExpectedDate?'行情待更新':'行情已同步'):job.stage;
+  $('#multi-market-status').textContent=(active?job.stage:idleStage)+(active&&p?` · ${p.processed}/${p.total}`:'')+
+   (job.result?.effective_date?` · 交易日${job.result.effective_date}`:'')+
+   (snapshot?.missing_files?` · ${snapshot.missing_files}只缺文件`:'')+
+   (snapshot?.not_updated_files?` · ${snapshot.not_updated_files}份未到目标日期`:'')+
+   (job.error?' · '+job.error:'')+freshness;
+  if(job.screen_id&&(marketPrepareWasActive||active)&&marketAttachedScreen!==job.screen_id){marketAttachedScreen=job.screen_id;multiStarting=false;await loadMultiLatestDate();await watchMulti(job.screen_id)}
+  applyMultiButtons();
+  if(active){marketPrepareWasActive=true;marketPrepareTimer=setTimeout(()=>watchMarketPrepare(job.id),2500);return}
+  if(marketPrepareWasActive){
+   if(job.result?.reused_result)message('相同数据与设置已有结果，已直接打开。');
+   marketPrepareWasActive=false;multiStarting=false;await loadMultiLatestDate();
+   if(job.screen_id&&multiTask===job.screen_id)await watchMulti(job.screen_id);else if(!job.screen_id&&multiTask)await watchMulti(multiTask);
+   await loadMultiPlans();await loadMultiHistory();applyMultiButtons();
+  }
+  if(active&&!job.screen_id&&multiSnapshot)$('#multi-execution').textContent='正在准备新任务，以下为上次查看的结果。';
+ }catch(e){message('连接中断，正在重连。');marketPrepareTimer=setTimeout(()=>watchMarketPrepare(id),4000)}
 }
-
-let fundamentalTimer=null,fundamentalWasActive=false;
+$('#multi-form').onsubmit=e=>{e.preventDefault();submitMulti()};
+$('#multi-force').onclick=()=>submitMulti(true);
+$('#multi-market-update').onclick=async()=>{
+ try{multiPreparing=true;applyMultiButtons();const r=await api('/market-prepare',{});marketPrepareTask=r.id;marketPrepareWasActive=true;await watchMarketPrepare(r.id)}
+ catch(e){multiPreparing=false;applyMultiButtons();message(e.message)}
+};
+$('#multi-stop').onclick=async()=>{
+ try{if(multiPreparing&&marketPrepareTask)await api('/market-prepare/'+marketPrepareTask+'/cancel',{});else if(multiRunningId||multiTask)await api('/multi-screens/'+(multiRunningId||multiTask)+'/cancel',{});message('正在停止，已完成内容会保留。')}
+ catch(e){message(e.message)}
+};
+async function continueMulti(retry){
+ if(!multiTask)return;multiStarting=true;applyMultiButtons();
+ try{const r=await api('/multi-screens/'+multiTask+(retry?'/retry?workers='+Number($('#multi-workers').value):'/resume'),{workers:Number($('#multi-workers').value)});multiStarting=false;multiPreparing=false;multiView='latest';$('#multi-result-view').value='latest';await watchMulti(r.id)}
+ catch(e){multiStarting=false;applyMultiButtons();message(e.message)}
+}
+$('#multi-resume').onclick=()=>continueMulti(false);$('#multi-retry').onclick=()=>continueMulti(true);
+async function watchRunProgress(id){
+ clearTimeout(multiProgressTimer);
+ try{
+  const p=await api('/multi-screens/'+id+'/progress');
+  if(['queued','running'].includes(p.status)||p.archive_state==='pending'){
+   multiRunningId=id;applyMultiButtons();multiProgressTimer=setTimeout(()=>watchRunProgress(id),3000);
+  }else{
+   if(multiRunningId===id)multiRunningId=null;applyMultiButtons();
+   if(multiTask===id)await watchMulti(id);
+   await loadMultiHistory();
+  }
+ }catch{multiProgressTimer=setTimeout(()=>watchRunProgress(id),5000)}
+}
+$('#multi-result-view').onchange=async()=>{
+ multiView=$('#multi-result-view').value;
+ if(multiView==='archive'&&multiTask){
+  try{const rows=await api('/multi-screens/'+multiTask+'/archives');$('#multi-archive-version').innerHTML='<option value="">最近归档</option>'+rows.map(r=>`<option value="${r.revision}">R${r.revision} · ${esc(multiState[r.status]||r.status)} · ${esc(new Date(r.created_at).toLocaleString())}</option>`).join('')}
+  catch(e){message(e.message)}
+ }
+ if(multiTask)watchMulti(multiTask);
+};
+$('#multi-archive-version').onchange=()=>{if(multiTask)watchMulti(multiTask)};
+const archiveRevisionQuery=()=>multiView==='archive'&&$('#multi-archive-version').value?'&revision='+$('#multi-archive-version').value:'';
+$('#multi-export-all').onclick=()=>{if(multiTask)window.location.href='/api/multi-screens/'+multiTask+'/export?format=csv&view='+multiView+archiveRevisionQuery()};
+$('#multi-export-json').onclick=()=>{if(multiTask)window.location.href='/api/multi-screens/'+multiTask+'/export?format=json&view=archive'+archiveRevisionQuery()};
+$('#multi-export-filtered').onclick=()=>{
+ if(!multiSnapshot)return;
+ const safe=v=>'"'+String(v??'').replace(/^[=+@\t\r-]/,m=>"'"+m).replaceAll('"','""')+'"';
+ const rows=[multiColumns.map(c=>c[1]),...multiDisplayedRows.map(r=>multiColumns.map(c=>multiCell(r,c[0])))];
+ const blob=new Blob(['\ufeff'+rows.map(row=>row.map(safe).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`quant-${multiSnapshot.effective_date}-V${multiSnapshot.version}-筛选结果.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+$('#multi-archive-retry').onclick=async()=>{try{await api('/multi-screens/'+multiTask+'/archive',{});await watchMulti(multiTask)}catch(e){message(e.message)}};
+$('#multi-refresh').onclick=async()=>{try{await loadMultiLatestDate();await loadMultiHistory();if(multiTask)await watchMulti(multiTask)}catch(e){message(e.message)}};
+$('#multi-history-search').onsubmit=e=>{e.preventDefault();multiHistoryOffset=0;loadMultiHistory().catch(e=>message(e.message))};
+$('#multi-history-prev').onclick=()=>{multiHistoryOffset=Math.max(0,multiHistoryOffset-20);loadMultiHistory().catch(e=>message(e.message))};
+$('#multi-history-next').onclick=()=>{multiHistoryOffset+=20;loadMultiHistory().catch(e=>message(e.message))};
+$('#multi-open-history').onclick=()=>$('#multi-history-panel').scrollIntoView({behavior:'smooth'});
+document.querySelector('[data-view="multi"]').addEventListener('click',loadMulti);
+if(new URLSearchParams(window.location.search).get('view')==='multi')document.addEventListener('DOMContentLoaded',()=>document.querySelector('[data-view="multi"]').click());
+let fundamentalTimer=null;
 async function loadFundamentalStatus(){
- clearTimeout(fundamentalTimer);
- const job=await api('/fundamental-refresh'),active=job&&['queued','running'].includes(job.status);
+ clearTimeout(fundamentalTimer);const job=await api('/fundamental-refresh');const active=job&&['queued','running'].includes(job.status);
  $('#multi-fundamental-update').disabled=!!active;
- if(!job){$('#multi-fundamental-status').textContent='尚未更新股本及财务，可读取通达信本地资料并计算全市场指标。';return}
- const coverage=job.result?.coverage,labels={queued:'排队中',running:'更新中',completed:'已完成',partial:'完成，部分源文件有问题',failed:'失败',interrupted:'已中断，可重新更新'};
- $('#multi-fundamental-status').textContent=`股本及财务：${labels[job.status]||job.status} · ${job.stage} ${job.total?'· '+job.processed+'/'+job.total:''}`+
-  (coverage?` · 股本${coverage.total_shares}只 / PE${coverage.pe}只 / PB${coverage.pb}只 · 参考日${job.result.reference_date}`:'')+
-  (job.errors?.length?' · '+job.errors.length+'项问题：'+(job.errors[0].error||'请查看导入记录'):'');
- if(active)fundamentalTimer=setTimeout(()=>loadFundamentalStatus().catch(e=>message(e.message)),2000);
- else if(fundamentalWasActive&&multiTask)await watchMulti(multiTask);
- fundamentalWasActive=!!active;
+ $('#multi-fundamental-status').textContent=job?(active?`资料更新中 · ${job.processed}/${job.total}`:job.status==='completed'?`资料已更新 · ${job.result?.reference_date||''}`:'资料更新未完成，请查看数据总览'):'';
+ if(active)fundamentalTimer=setTimeout(()=>loadFundamentalStatus().catch(e=>message(e.message)),2500);
 }
-$('#multi-fundamental-update').onclick=async()=>{
- try{$('#multi-fundamental-update').disabled=true;await api('/fundamental-refresh',{});await loadFundamentalStatus()}
- catch(e){$('#multi-fundamental-update').disabled=false;message(e.message)}
-};
+$('#multi-fundamental-update').onclick=async()=>{try{await api('/fundamental-refresh',{});await loadFundamentalStatus()}catch(e){message(e.message)}};
+$('#multi-settings').addEventListener('toggle',()=>{if($('#multi-settings').open)loadFundamentalStatus().catch(e=>message(e.message))});
