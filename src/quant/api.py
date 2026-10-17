@@ -57,7 +57,7 @@ async def unexpected_error(request,exc):
 @app.get('/')
 def home():
     html=(static/'index.html').read_text(encoding='utf-8')
-    for name in ('style.css','app.js','sync.js','market.js','stock-detail.js','multiscreener.js','stock-library.js'):
+    for name in ('style.css','app.js','sync.js','market.js','stock-detail.js','multiscreener.js','stock-library.js','research.js'):
         version=hashlib.sha256((static/name).read_bytes()).hexdigest()[:12]
         html=html.replace(f'/static/{name}"',f'/static/{name}?v={version}"')
     return HTMLResponse(html,headers={'Cache-Control':'no-cache'})
@@ -401,3 +401,53 @@ def stock_library_pause(job_id:UUID):
 def stock_library_resume(job_id:UUID):
     from .company_library import resume
     return resume(job_id)
+
+
+class ResearchStartRequest(BaseModel):
+    mode:str='all'
+
+
+@app.get('/api/research-jobs')
+def research_status():
+    from .research import status
+    return status()
+
+
+@app.post('/api/research-jobs',status_code=202)
+def research_start(body:ResearchStartRequest):
+    from .research import start,status
+    job_id=start(body.mode)
+    return status(job_id)
+
+
+@app.post('/api/research-jobs/{job_id}/pause')
+def research_pause(job_id:UUID):
+    from .research import pause,status
+    pause(job_id)
+    return status(job_id)
+
+
+@app.post('/api/research-jobs/{job_id}/resume',status_code=202)
+def research_resume(job_id:UUID):
+    from .research import resume,status
+    resume(job_id)
+    return status(job_id)
+
+
+@app.get('/api/research/{symbol}')
+def research_documents(symbol:str):
+    from .research import documents
+    return documents(symbol)
+
+
+@app.get('/api/research-original/{revision_id}/pdf')
+def research_pdf(revision_id:int):
+    from .research import original
+    row=original(revision_id)
+    return Response(bytes(row['body']),media_type='application/pdf',headers={'Content-Disposition':f'inline; filename="research-{revision_id}.pdf"','X-Content-Type-Options':'nosniff'})
+
+
+@app.get('/api/research-original/{revision_id}/text')
+def research_text(revision_id:int):
+    from .research import original
+    return {'pages':original(revision_id)['pages']}
