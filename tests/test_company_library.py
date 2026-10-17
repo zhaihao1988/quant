@@ -82,6 +82,11 @@ def test_rechecked_unchanged_reports_are_fresh(isolated_db,monkeypatch):
     job,_=lib.start();monkeypatch.setattr(worker,'INTERVAL',0);monkeypatch.setattr(docs,'fetch_page',fake_fetch);worker.run(job)
     assert lib.library()['summary']['due']==0
     assert lib.library()['stocks'][0]['collected_at']!=lib.library()['stocks'][0]['checked_at']
+    cached,_=lib.start();worker.run(cached)
+    assert lib.job_status(cached)['counts']=={'cached':1}
+    with connect() as c:c.execute("UPDATE company_collection_item SET finished_at=now()-interval '8 days' WHERE status='saved'")
+    # Reusing a cache today cannot extend the age of the last source check.
+    assert lib.library()['summary']['due']==1
 
 
 def test_repeated_access_rejections_pause_the_collector(isolated_db,monkeypatch):

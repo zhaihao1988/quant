@@ -29,7 +29,7 @@
   $('#library-industry').innerHTML='<option value="">全部行业</option>'+data.industries.map(v=>`<option value="${esc(v)}" ${selected===v?'selected':''}>${esc(v)}</option>`).join('');
   const s=data.summary;
   $('#library-summary').textContent=`本地A股 ${s.total}只 · 经营评述已入库 ${s.stored}只 / ${s.reports||0}期 · 待采集或核对 ${s.due}只 · 失败 ${s.failed}只 · 来源无全文 ${s.no_content}只`;
-  $('#library-results').innerHTML=table(['证券','名称','行业','经营评述','最新报告期','最近采集','最近核对','状态'],data.stocks.map(r=>[r.symbol,r.name,r.industry||'—',r.report_count+'期',r.report_date||'—',r.collected_at?new Date(r.collected_at).toLocaleString('zh-CN'):'—',r.checked_at?new Date(r.checked_at).toLocaleString('zh-CN'):'—',names[r.state]]));
+  $('#library-results').innerHTML=table(['证券','名称','资料状态','经营评述','最新报告期','行业','最近采集','最近核对来源'],data.stocks.map(r=>[r.symbol,r.name,names[r.state],r.report_count+'期',r.report_date||'—',r.industry||'—',r.collected_at?new Date(r.collected_at).toLocaleString('zh-CN'):'—',r.checked_at?new Date(r.checked_at).toLocaleString('zh-CN'):'—']));
   $('#library-results').querySelectorAll('tbody tr').forEach((tr,index)=>{
    for(const n of [0,1]){
     const button=document.createElement('button'),cell=tr.cells[n],r=data.stocks[index];button.type='button';button.className='library-stock-link';button.textContent=cell.textContent;button.setAttribute('aria-label',`查看${r.name} ${r.symbol}行情与资料`);

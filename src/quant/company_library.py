@@ -27,7 +27,7 @@ STOCKS='''WITH documents AS (
  WHEN last.status='no_content' AND last.finished_at>now()-interval '7 days' THEN false
  ELSE true END AS due
  FROM security s LEFT JOIN documents d ON d.symbol=s.symbol
- LEFT JOIN LATERAL(SELECT i.status,i.error,i.finished_at FROM company_collection_item i WHERE i.symbol=s.symbol AND i.finished_at IS NOT NULL ORDER BY i.finished_at DESC LIMIT 1) last ON true
+ LEFT JOIN LATERAL(SELECT i.status,i.error,i.finished_at FROM company_collection_item i WHERE i.symbol=s.symbol AND i.finished_at IS NOT NULL AND i.status IN ('saved','no_content','failed') ORDER BY i.finished_at DESC LIMIT 1) last ON true
  LEFT JOIN LATERAL(SELECT i.status FROM company_collection_item i JOIN company_collection_job j ON j.id=i.job_id
  WHERE i.symbol=s.symbol AND i.status IN ('pending','running') AND j.status IN ('queued','running') LIMIT 1) active ON true
  LEFT JOIN LATERAL(SELECT string_agg(DISTINCT t.name,'、' ORDER BY t.name) AS names FROM membership m JOIN taxonomy t ON t.id=m.taxonomy_id
@@ -91,7 +91,7 @@ def start(mode='due'):
         c.execute("INSERT INTO company_collection_job(id,status,mode,total,heartbeat_at) VALUES (%s,'queued',%s,%s,now())",(job,mode,len(targets)))
         with c.cursor() as cursor:
             cursor.executemany('''INSERT INTO company_collection_item(job_id,symbol,status,report_count,finished_at)
-              VALUES (%s,%s,%s,%s,%s)''',[(job,r['symbol'],'pending' if r['due'] or mode=='retry' else 'cached' if r['report_count'] else 'no_content',r['report_count'],
+              VALUES (%s,%s,%s,%s,%s)''',[(job,r['symbol'],'pending' if r['due'] or mode=='retry' else 'cached',r['report_count'],
               None if r['due'] or mode=='retry' else datetime.now(timezone.utc)) for r in targets])
     try:launch_worker(job)
     except Exception:
