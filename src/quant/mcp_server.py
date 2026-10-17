@@ -92,4 +92,35 @@ def create_server():
         from .fundamentals import load_inputs
         return load_inputs(symbol,date.fromisoformat(as_of) if as_of else date.today())
 
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def public_information_status() -> dict:
+        """新闻增量水位、覆盖缺口、资料向量索引与失败明细。"""
+        from .information import status
+        return status()
+
+    @mcp.tool()
+    def update_public_information(action:str='update') -> dict:
+        """启动增量新闻及资料索引，action为update/start/pause/retry。数据库保留进度。"""
+        from .information import control
+        return control(action)
+
+    @mcp.tool()
+    def search_local_evidence(query:str,kind:str='all',symbol:str|None=None,as_of:str|None=None) -> dict:
+        """BGE检索原文证据，调用硅基流动。kind为all/news/company/research。相似度不代表受益。"""
+        from datetime import datetime
+        from .information import search
+        return search(query,kind,symbol,datetime.fromisoformat(as_of) if as_of else None)
+
+    @mcp.tool()
+    def analyze_stored_news(article_id:int) -> dict:
+        """调用Qwen整理已入库新闻与公司原文证据，结果快照入库；不证明股价因果。"""
+        from .events import analyze_article
+        return analyze_article(article_id)
+
+    @mcp.tool()
+    def stock_related_events(symbol:str) -> dict:
+        """查看个股近一年相关新闻原文，包含BGE远程检索。"""
+        from .events import stock_events
+        return stock_events(symbol)
+
     return mcp

@@ -4,3 +4,6 @@ src/quant/legacy_strategies/*.py -text
 
 # Applied migrations are checked byte-for-byte; do not rewrite line endings.
 src/quant/migrations/*.sql -text
+
+# Tokenizer bytes identify the embedding profile.
+src/quant/data/bge-tokenizer.json -text

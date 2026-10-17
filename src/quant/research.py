@@ -51,6 +51,25 @@ def launch(job_id):
           stdout=log,stderr=log,stdin=subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0,start_new_session=os.name!='nt')
 
 
+def roll_forward_active(connection=None):
+    """Advance a long initial backfill across midnight; revisit completed stocks incrementally."""
+    from contextlib import nullcontext
+    begin,end=window()
+    with (nullcontext(connection) if connection is not None else connect()) as c:
+        c.execute('SELECT pg_advisory_xact_lock(%s)',(RESERVE_LOCK,))
+        job=c.execute("SELECT id FROM research_job WHERE status IN ('queued','running') ORDER BY created_at DESC LIMIT 1 FOR UPDATE").fetchone()
+        if not job:return
+        c.execute('UPDATE research_job SET start_date=%s,end_date=%s WHERE id=%s',(begin,end,job['id']))
+        c.execute('''INSERT INTO research_item(job_id,symbol,ordinal,status)
+          SELECT %s,s.symbol,coalesce((SELECT max(ordinal) FROM research_item WHERE job_id=%s),-1)+row_number() OVER(ORDER BY s.symbol),'pending'
+          FROM security s WHERE s.kind='stock' AND s.market IN ('SH','SZ','BJ') AND NOT EXISTS
+          (SELECT 1 FROM research_item i WHERE i.job_id=%s AND i.symbol=s.symbol) ON CONFLICT DO NOTHING''',(job['id'],job['id'],job['id']))
+        c.execute('UPDATE research_job SET total=(SELECT count(*) FROM research_item WHERE job_id=%s) WHERE id=%s',(job['id'],job['id']))
+        c.execute('''UPDATE research_item i SET status='pending',started_at=NULL,finished_at=NULL
+          WHERE i.job_id=%s AND i.status IN ('saved','no_records') AND NOT EXISTS
+          (SELECT 1 FROM research_checkpoint p WHERE p.symbol=i.symbol AND p.checked_through>=%s)''',(job['id'],end))
+
+
 def start(mode='all'):
     if mode not in ('all','retry'):raise ValueError('未知调研更新方式')
     settings()
@@ -58,7 +77,9 @@ def start(mode='all'):
     with connect() as c:
         c.execute('SELECT pg_advisory_xact_lock(%s)',(RESERVE_LOCK,));recover(c)
         active=c.execute("SELECT id FROM research_job WHERE status IN ('queued','running') LIMIT 1").fetchone()
-        if active:return str(active['id'])
+        if active:
+            roll_forward_active(c)
+            return str(active['id'])
         if mode=='retry':
             stocks=c.execute('''SELECT DISTINCT s.symbol FROM security s JOIN research_item i ON s.symbol=i.symbol
               WHERE i.job_id=(SELECT id FROM research_job ORDER BY created_at DESC LIMIT 1) AND i.status='failed' ORDER BY s.symbol''').fetchall()
@@ -97,18 +118,26 @@ def resume(job_id):
 
 
 def save_metadata(symbol,record):
+    fingerprint=sha256(__import__('json').dumps(record,sort_keys=True,default=str,ensure_ascii=False).encode()).hexdigest()
     with connect() as c:
-        row=c.execute('''INSERT INTO research_document(source_id,title,published_at,source_url,pdf_url) VALUES (%s,%s,%s,%s,%s)
-          ON CONFLICT(source,source_id) DO UPDATE SET last_seen_at=now() RETURNING *''',
-          (record['source_id'],record['title'],record['published_at'],record['source_url'],record['pdf_url'])).fetchone()
+        row=c.execute('''INSERT INTO research_document(source_id,title,published_at,source_url,pdf_url,metadata_sha256)
+          VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT(source,source_id) DO UPDATE SET last_seen_at=now(),
+          title=excluded.title,published_at=excluded.published_at,source_url=excluded.source_url,pdf_url=excluded.pdf_url,
+          updated_at=CASE WHEN research_document.metadata_sha256 IS DISTINCT FROM excluded.metadata_sha256 THEN now() ELSE research_document.updated_at END,
+          metadata_sha256=excluded.metadata_sha256 RETURNING *''',
+          (record['source_id'],record['title'],record['published_at'],record['source_url'],record['pdf_url'],fingerprint)).fetchone()
         c.execute('INSERT INTO research_security(document_id,symbol) VALUES (%s,%s) ON CONFLICT DO NOTHING',(row['id'],symbol))
+        c.execute('INSERT INTO research_metadata_revision(document_id,sha256,metadata) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING',
+          (row['id'],fingerprint,Jsonb(__import__('json').loads(__import__('json').dumps(record,default=str)))))
     return row
 
 
 def process_document(document):
     with connect() as guard:
         guard.execute('SELECT pg_advisory_lock(%s,%s)',(DOCUMENT_LOCK,document['id']));guard.commit()
-        try:return _process_document(document)
+        try:
+            document=guard.execute('SELECT * FROM research_document WHERE id=%s',(document['id'],)).fetchone();guard.commit()
+            return _process_document(document)
         finally:guard.execute('SELECT pg_advisory_unlock(%s,%s)',(DOCUMENT_LOCK,document['id']));guard.commit()
 
 
@@ -116,11 +145,15 @@ def _process_document(document):
     with connect() as c:
         old=c.execute('SELECT * FROM research_revision WHERE document_id=%s AND parser_version=%s AND model=%s ORDER BY id DESC LIMIT 1',
           (document['id'],source.PARSER_VERSION,source.MODEL)).fetchone()
-    if old and old['status'] in ('ready','no_qa','needs_ocr'):return old['status']
+    checked=document.get('content_checked_at')
+    recheck=not checked or (datetime.now(timezone.utc)-checked).days>=30 or document.get('content_url')!=document['pdf_url']
+    if old and not recheck and old['status'] in ('ready','no_qa','needs_ocr'):return old['status']
     if not old:
         with connect() as c:old=c.execute('SELECT * FROM research_revision WHERE document_id=%s ORDER BY id DESC LIMIT 1',(document['id'],)).fetchone()
-    # Existing failed/pending revisions reuse the original bytes, no repeated download.
-    body=bytes(old['body']) if old else source.download_pdf(document['pdf_url'])
+    body=source.download_pdf(document['pdf_url']) if recheck or not old else bytes(old['body'])
+    with connect() as c:c.execute('UPDATE research_document SET content_checked_at=now(),content_url=%s WHERE id=%s',(document['pdf_url'],document['id']))
+    if old and sha256(body).hexdigest()==old['sha256'] and old['parser_version']==source.PARSER_VERSION and old['model']==source.MODEL and old['status'] in ('ready','no_qa','needs_ocr'):
+        return old['status']
     digest=sha256(body).hexdigest()
     with connect() as c:
         row=c.execute('''INSERT INTO research_revision(document_id,sha256,body,pages,parser_version,model,status)
@@ -129,7 +162,7 @@ def _process_document(document):
           (document['id'],digest,body,source.PARSER_VERSION,source.MODEL)).fetchone()
     revision_id=row['id']
     try:
-        pages=old['pages'] if old and old['pages'] else source.pdf_pages(body)
+        pages=old['pages'] if old and old['sha256']==digest and old['pages'] else source.pdf_pages(body)
         with connect() as c:c.execute('UPDATE research_revision SET pages=%s WHERE id=%s',(Jsonb(pages),revision_id))
         if sum(len(p['text'].strip()) for p in pages)<80:
             state='needs_ocr';extraction={}
@@ -153,8 +186,18 @@ def safe_error(exc):
 
 def collect_stock(job_id,symbol):
     with connect() as c:job=c.execute('SELECT * FROM research_job WHERE id=%s',(job_id,)).fetchone()
-    records=source.fetch_announcements(symbol,job['start_date'],job['end_date'])
-    if not records:return {'status':'no_records','documents':0,'ready':0,'error':None}
+    with connect() as c:checkpoint=c.execute('SELECT * FROM research_checkpoint WHERE symbol=%s',(symbol,)).fetchone()
+    begin=job['start_date'];full=True
+    if checkpoint and checkpoint['checked_through'] and checkpoint['full_checked_at'] and (datetime.now(timezone.utc)-checkpoint['full_checked_at']).days<7:
+        begin=max(begin,checkpoint['checked_through']-__import__('datetime').timedelta(days=7));full=False
+    records=source.fetch_announcements(symbol,begin,job['end_date'])
+    def checkpoint_success():
+        with connect() as c:c.execute('''INSERT INTO research_checkpoint(symbol,checked_through,full_checked_at) VALUES(%s,%s,CASE WHEN %s THEN now() END)
+          ON CONFLICT(symbol) DO UPDATE SET checked_through=greatest(research_checkpoint.checked_through,excluded.checked_through),
+          full_checked_at=coalesce(excluded.full_checked_at,research_checkpoint.full_checked_at)''',(symbol,job['end_date'],full))
+    if not records:
+        checkpoint_success()
+        return {'status':'no_records','documents':0,'ready':0,'error':None}
     failures=[];ready=0
     for record in records:
         with connect() as c:control=c.execute('SELECT pause_requested FROM research_job WHERE id=%s',(job_id,)).fetchone()
@@ -166,6 +209,7 @@ def collect_stock(job_id,symbol):
         except Exception as exc:
             failures.append(f"{record['source_id']}：{safe_error(exc)}")
             if any(x in failures[-1] for x in ('模型HTTP 401','模型HTTP 403')):break
+    if not failures:checkpoint_success()
     return {'status':'failed' if failures else 'saved','documents':len(records),'ready':ready,'error':'；'.join(failures)[:1500] or None}
 
 

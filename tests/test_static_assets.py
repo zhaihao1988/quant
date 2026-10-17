@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 def test_home_revalidates_html_and_versions_changed_assets(tmp_path,monkeypatch):
     from quant import api
     monkeypatch.setattr(api,'static',tmp_path)
-    names=('style.css','app.js','sync.js','market.js','stock-detail.js','multiscreener.js','stock-library.js','research.js')
+    names=('style.css','app.js','sync.js','market.js','stock-detail.js','multiscreener.js','stock-library.js','research.js','news.js')
     (tmp_path/'index.html').write_text('<link href="/static/style.css">'+''.join(f'<script src="/static/{n}"></script>' for n in names[1:]),encoding='utf8')
     for name in names:(tmp_path/name).write_bytes(b'initial')
     client=TestClient(api.app)

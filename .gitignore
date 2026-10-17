@@ -11,3 +11,7 @@ artifacts/
 .coverage
 dist/
 build/
+
+!src/quant/data/
+src/quant/data/*
+!src/quant/data/bge-tokenizer.json

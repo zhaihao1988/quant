@@ -1,6 +1,6 @@
 import logging
 import hashlib
-from datetime import date
+from datetime import date,datetime
 from pathlib import Path
 from contextlib import asynccontextmanager
 from uuid import UUID
@@ -17,7 +17,25 @@ from .db import connect
 @asynccontextmanager
 async def lifespan(app):
     recover_workflow_state()
-    yield
+    from .information import launch
+    with connect() as c:enabled=c.execute('SELECT enabled FROM information_runtime WHERE id=1').fetchone()['enabled']
+    if enabled:launch()
+    import asyncio
+    from contextlib import suppress
+    async def monitor():
+        from .information import status
+        while True:
+            await asyncio.sleep(30)
+            try:
+                state=await asyncio.to_thread(status)
+                if state['runtime']['enabled'] and not state['runtime']['process_active']:
+                    await asyncio.to_thread(launch)
+            except Exception:logging.getLogger(__name__).exception('Information worker recovery check failed')
+    watcher=asyncio.create_task(monitor())
+    try:yield
+    finally:
+        watcher.cancel()
+        with suppress(asyncio.CancelledError):await watcher
 
 
 app=FastAPI(title='Quant 本地选股工作台',version='0.1.0',lifespan=lifespan)
@@ -57,7 +75,7 @@ async def unexpected_error(request,exc):
 @app.get('/')
 def home():
     html=(static/'index.html').read_text(encoding='utf-8')
-    for name in ('style.css','app.js','sync.js','market.js','stock-detail.js','multiscreener.js','stock-library.js','research.js'):
+    for name in ('style.css','app.js','sync.js','market.js','stock-detail.js','multiscreener.js','stock-library.js','research.js','news.js'):
         version=hashlib.sha256((static/name).read_bytes()).hexdigest()[:12]
         html=html.replace(f'/static/{name}"',f'/static/{name}?v={version}"')
     return HTMLResponse(html,headers={'Cache-Control':'no-cache'})
@@ -451,3 +469,48 @@ def research_pdf(revision_id:int):
 def research_text(revision_id:int):
     from .research import original
     return {'pages':original(revision_id)['pages']}
+
+
+@app.get('/api/information/status')
+def information_status():
+    from .information import status
+    return status()
+
+class InformationControl(BaseModel):
+    action:str='update'
+
+@app.post('/api/information/control',status_code=202)
+def information_control(body:InformationControl):
+    from .information import control
+    return control(body.action)
+
+@app.get('/api/news/feed')
+def news_feed(q:str=Query('',max_length=200),limit:int=Query(40,ge=1,le=100)):
+    from .information import feed
+    return feed(q,limit)
+
+class EvidenceQuery(BaseModel):
+    query:str=Field(min_length=1,max_length=1500)
+    kind:str='all'
+    symbol:str|None=None
+    as_of:datetime|None=None
+
+@app.post('/api/evidence/search')
+def evidence_search(body:EvidenceQuery):
+    from .information import search
+    return search(body.query,body.kind,body.symbol,body.as_of)
+
+@app.post('/api/news/{article_id}/event-analysis')
+def event_analysis(article_id:int):
+    from .events import analyze_article
+    return analyze_article(article_id)
+
+@app.get('/api/events/stock/{symbol}')
+def stock_events(symbol:str):
+    from .events import stock_events
+    return stock_events(symbol)
+
+@app.post('/api/events/stock/{symbol}/analysis')
+def stock_event_analysis(symbol:str):
+    from .events import stock_events
+    return stock_events(symbol,analyze=True)
