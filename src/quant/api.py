@@ -57,7 +57,7 @@ async def unexpected_error(request,exc):
 @app.get('/')
 def home():
     html=(static/'index.html').read_text(encoding='utf-8')
-    for name in ('style.css','app.js','sync.js','market.js','stock-detail.js','multiscreener.js'):
+    for name in ('style.css','app.js','sync.js','market.js','stock-detail.js','multiscreener.js','stock-library.js'):
         version=hashlib.sha256((static/name).read_bytes()).hexdigest()[:12]
         html=html.replace(f'/static/{name}"',f'/static/{name}?v={version}"')
     return HTMLResponse(html,headers={'Cache-Control':'no-cache'})
@@ -365,3 +365,39 @@ def refresh_company_documents(symbol:str,body:CompanyRefreshRequest):
     from .company_documents import reserve_refresh
     job,reused=reserve_refresh(symbol,body.force)
     return {'id':job,'reused':reused}
+
+
+@app.get('/api/stock-library')
+def stock_library(q:str=Query('',max_length=100),state:str='',industry:str=Query('',max_length=100),offset:int=Query(0,ge=0),limit:int=Query(50,ge=1,le=100)):
+    from .company_library import library
+    return library(q,state,industry,offset,limit)
+
+
+@app.get('/api/stock-library/job')
+def stock_library_job():
+    from .company_library import job_status
+    return job_status()
+
+
+class LibraryCollectionRequest(BaseModel):
+    mode:str='due'
+
+
+@app.post('/api/stock-library/jobs',status_code=202)
+def stock_library_start(body:LibraryCollectionRequest):
+    from .company_library import start
+    job,reused=start(body.mode)
+    return {'id':job,'reused':reused}
+
+
+@app.post('/api/stock-library/jobs/{job_id}/pause')
+def stock_library_pause(job_id:UUID):
+    from .company_library import pause,job_status
+    pause(job_id)
+    return job_status(job_id)
+
+
+@app.post('/api/stock-library/jobs/{job_id}/resume',status_code=202)
+def stock_library_resume(job_id:UUID):
+    from .company_library import resume
+    return resume(job_id)

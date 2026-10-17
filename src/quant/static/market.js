@@ -1,5 +1,5 @@
 {
-  let rows=[],page=0,chart=null,result=null,initial=false,requestId=0,openingFromScreen=false,screenScroll=0;
+  let rows=[],page=0,chart=null,result=null,initial=false,requestId=0,openingFromScreen=false,screenScroll=0,returnView='multi';
   const pageSize=50,up='#ef5350',down='#26a69a';
   const colors=['#e5e7eb','#f4d35e','#c084fc','#4ade80','#60a5fa','#f472b6','#fb923c','#a3e635'];
   const periodNames={daily:'日线',weekly:'周线',monthly:'月线'};
@@ -66,15 +66,15 @@
   };
   document.addEventListener('quant:open-market',event=>{
     const symbol=event.detail?.symbol;if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol||''))return;
-    screenScroll=window.scrollY;openingFromScreen=true;
+    screenScroll=window.scrollY;returnView=event.detail.source==='library'?'library':'multi';openingFromScreen=true;
     $('#symbol').value=symbol;$('#market-timeframe').value='daily';$('#market-adjust').value='qfq';
     $('#market-range').value='20000';$('#market-start').value='';$('#market-end').value='';
-    $('#market-back').hidden=false;
+    $('#market-back').hidden=false;$('#market-back').textContent=returnView==='library'?'返回股票资料库':'返回选股结果';
     document.querySelector('[data-view="market"]').click();openingFromScreen=false;
     $('#market-form').requestSubmit();$('#market').scrollIntoView({block:'start'});
   });
   $('#market-back').onclick=()=>{
-    document.querySelector('[data-view="multi"]').click();window.scrollTo(0,screenScroll);
+    document.querySelector(`[data-view="${returnView}"]`).click();window.scrollTo(0,screenScroll);
   };
   $('#market-timeframe').onchange=()=>$('#market-form').requestSubmit();
   document.querySelector('[data-view="market"]').addEventListener('click',()=>{if(!openingFromScreen&&!initial&&!$('#market-submit').disabled)$('#market-form').requestSubmit();else chart?.resize()});

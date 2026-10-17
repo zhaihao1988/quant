@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quant · 本地选股工作台</title><link rel="stylesheet" href="/static/style.css"></head>
-<body><aside><div class="brand"><span>Q</span> QUANT</div><div class="subtitle">本地研究工作台</div><nav><button data-view="overview" class="active">数据总览</button><button data-view="screen">技术选股</button><button data-view="multi">多策略选股</button><button data-view="market">个股行情</button><button data-view="graph">产业关联</button><button data-view="news">热点选股</button></nav><footer>通达信本地数据<br>本地数据<br><span id="connection">连接中…</span></footer></aside>
+<body><aside><div class="brand"><span>Q</span> QUANT</div><div class="subtitle">本地研究工作台</div><nav><button data-view="overview" class="active">数据总览</button><button data-view="screen">技术选股</button><button data-view="multi">多策略选股</button><button data-view="market">个股行情</button><button data-view="library">股票资料库</button><button data-view="graph">产业关联</button><button data-view="news">热点选股</button></nav><footer>通达信本地数据<br>本地数据<br><span id="connection">连接中…</span></footer></aside>
 <main><header><div><h1 id="page-title">数据总览</h1></div><div class="local"><i></i> 仅本机 · 127.0.0.1</div></header><div id="message" role="status"></div>
 <section id="overview" class="view active"><div class="hero"><div><h2>行情数据</h2><p>从通达信本地文件更新行情。</p></div><button id="import-button" class="primary">更新行情</button></div><div class="stats" id="stats"></div><div class="panel"><div class="panel-head"><h3>通达信与数据库对比</h3><button type="button" id="scan-sources">重新对比源文件</button></div>
  <p id="source-summary">正在检查本地A股文件…</p><form id="source-search" class="actions">
@@ -61,6 +61,14 @@
   <div class="actions"><span id="multi-history-page" class="hint"></span><button type="button" id="multi-history-prev">上一页</button><button type="button" id="multi-history-next">下一页</button></div>
  </div>
 </section>
+<section id="library" class="view"><div class="panel">
+ <div class="panel-head"><h3>全部A股</h3><button type="button" id="library-refresh">刷新状态</button></div>
+ <p id="library-summary" class="hint">正在读取股票清单…</p>
+ <form id="library-form" class="actions library-search"><input id="library-query" aria-label="资料库代码或名称" placeholder="代码或名称"><select id="library-industry" aria-label="资料库行业"><option value="">全部行业</option></select><select id="library-state" aria-label="资料采集状态"><option value="">全部状态</option><option value="pending">待采集</option><option value="stored">已入库</option><option value="updating">采集中</option><option value="failed">失败待重试</option><option value="no_content">来源暂无全文</option></select><button type="submit">查询</button></form>
+ <div class="actions"><button type="button" class="primary" id="library-start">补齐 / 核对经营评述</button><button type="button" id="library-pause" hidden>暂停采集</button><button type="button" id="library-resume" hidden>继续采集</button><button type="button" id="library-retry">重试失败股票</button></div>
+ <p id="library-job" class="hint" role="status"></p><details id="library-errors" class="table-wrap" hidden></details>
+ <div id="library-results" class="table-wrap"></div><div class="actions"><span id="library-page" class="hint"></span><button type="button" id="library-prev">上一页</button><button type="button" id="library-next">下一页</button></div>
+ </div></section>
 <section id="market" class="view">
  <div class="panel market-panel"><div class="market-heading"><h3>个股详情</h3><button id="market-back" type="button" hidden>返回选股结果</button><button id="stock-text-jump" type="button">经营资料 ↓</button></div>
  <form id="market-form" class="market-toolbar">
@@ -100,4 +108,4 @@
  </details></div></section>
 <section id="graph" class="view"><div class="panel"><h3>公司与产业分类</h3><p>当前提供通达信行业与股票池关联。分类归属不代表上下游或受益关系。</p><form id="graph-form" class="actions"><input id="graph-query" value="晨光生物" aria-label="公司或产业名称"><button class="primary">查询关联</button></form><div id="graph-results"></div></div></section>
 <section id="news" class="view"><div class="panel"><h3>从一条新闻开始</h3><p>粘贴新闻，匹配本地公司与分类，再查看候选股票的技术指标。当前为规则匹配，未接入大模型或自动新闻源。</p><form id="news-form"><label>新闻标题<input id="news-title" required maxlength="500" placeholder="输入包含公司或行业名称的新闻标题"></label><label>新闻正文<textarea id="news-content" rows="6" maxlength="100000" placeholder="粘贴新闻正文…"></textarea></label><label>来源链接<input id="news-url" type="url" placeholder="https://…"></label><button class="primary">关联股票并分析 →</button></form><div id="news-results"></div></div></section>
-</main><script src="/static/vendor/echarts.min.js" defer></script><script src="/static/app.js" defer></script><script src="/static/sync.js" defer></script><script src="/static/stock-detail.js" defer></script><script src="/static/market.js" defer></script><script src="/static/multiscreener.js" defer></script></body></html>
+</main><script src="/static/vendor/echarts.min.js" defer></script><script src="/static/app.js" defer></script><script src="/static/sync.js" defer></script><script src="/static/stock-detail.js" defer></script><script src="/static/market.js" defer></script><script src="/static/multiscreener.js" defer></script><script src="/static/stock-library.js" defer></script></body></html>
