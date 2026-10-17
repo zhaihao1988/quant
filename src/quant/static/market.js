@@ -1,5 +1,5 @@
 {
-  let rows=[],page=0,chart=null,result=null,initial=false,requestId=0;
+  let rows=[],page=0,chart=null,result=null,initial=false,requestId=0,openingFromScreen=false,screenScroll=0;
   const pageSize=50,up='#ef5350',down='#26a69a';
   const colors=['#e5e7eb','#f4d35e','#c084fc','#4ade80','#60a5fa','#f472b6','#fb923c','#a3e635'];
   const periodNames={daily:'日线',weekly:'周线',monthly:'月线'};
@@ -38,7 +38,7 @@
     hover(bars.length-1);$('#chart-window-note').textContent=`已加载 ${bars.length} 根${periodNames[result.timeframe]}；初始视窗最近120根，可滚轮缩放、拖动底部滑块或点击“显示全部”。`;
   }
   $('#chart-fit').onclick=()=>chart?.dispatchAction({type:'dataZoom',start:0,end:100});
-  $('#chart-recent').onclick=()=>chart?.dispatchAction({type:'dataZoom',startValue:Math.max(0,result.bars.length-120),endValue:result.bars.length-1});
+  $('#chart-recent').onclick=()=>result&&chart?.dispatchAction({type:'dataZoom',startValue:Math.max(0,result.bars.length-120),endValue:result.bars.length-1});
   async function symbolValue(){
     const value=$('#symbol').value.trim().toUpperCase();
     if(/^\d{6}\.(SH|SZ|BJ)$/.test(value))return value;
@@ -48,7 +48,8 @@
     throw Error('未唯一匹配证券，请输入完整代码，如300138.SZ');
   }
   $('#market-form').onsubmit=async event=>{
-    event.preventDefault();const current=++requestId,button=$('#market-submit');button.disabled=true;button.textContent='查询中…';
+    event.preventDefault();const current=++requestId,button=$('#market-submit');
+    result=null;rows=[];chart?.clear();$('#chart-readout').textContent='正在加载行情…';$('#chart-indicators').textContent='';$('#market-info').textContent='';$('#chart-window-note').textContent='';$('#market-note').textContent='';showPage(0);button.disabled=true;button.textContent='查询中…';
     for(const id of ['market-newest','market-prev','market-next','market-oldest'])$('#'+id).disabled=true;
     try{
       const symbol=await symbolValue();if(current!==requestId)return;$('#symbol').value=symbol;
@@ -60,8 +61,20 @@
       rows=result.bars.slice().reverse();showPage(0);
       if(rows.length)draw();else{chart?.clear();$('#chart-readout').textContent='所选区间无行情';$('#chart-indicators').textContent=''}
       $('#market-note').textContent=result.timeframe==='daily'?'成交量图以手展示，表格以万股展示；换手率按可用历史股本估算。':'周/月换手率按每日估算值累加；未结束周期以截止日期计算，后续仍可能变化。';message(result.truncated?'所选范围只加载了一段记录，可切换全部历史查看。':'');initial=true;
-    }catch(error){if(current===requestId){message(error.message);showPage(page)}}finally{if(current===requestId){button.disabled=false;button.textContent='查询行情'}}
+    }catch(error){if(current===requestId){message(error.message);$('#chart-readout').textContent='行情加载失败';showPage(page)}}finally{if(current===requestId){button.disabled=false;button.textContent='查询行情'}}
+  };
+  document.addEventListener('quant:open-market',event=>{
+    const symbol=event.detail?.symbol;if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol||''))return;
+    screenScroll=window.scrollY;openingFromScreen=true;
+    $('#symbol').value=symbol;$('#market-timeframe').value='daily';$('#market-adjust').value='qfq';
+    $('#market-range').value='20000';$('#market-start').value='';$('#market-end').value='';
+    $('#market-back').hidden=false;
+    document.querySelector('[data-view="market"]').click();openingFromScreen=false;
+    $('#market-form').requestSubmit();$('#market').scrollIntoView({block:'start'});
+  });
+  $('#market-back').onclick=()=>{
+    document.querySelector('[data-view="multi"]').click();window.scrollTo(0,screenScroll);
   };
   $('#market-timeframe').onchange=()=>$('#market-form').requestSubmit();
-  document.querySelector('[data-view="market"]').addEventListener('click',()=>{if(!initial&&!$('#market-submit').disabled)$('#market-form').requestSubmit();else chart?.resize()});
+  document.querySelector('[data-view="market"]').addEventListener('click',()=>{if(!openingFromScreen&&!initial&&!$('#market-submit').disabled)$('#market-form').requestSubmit();else chart?.resize()});
 }

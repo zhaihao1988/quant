@@ -62,14 +62,14 @@
  </div>
 </section>
 <section id="market" class="view">
- <div class="panel market-panel"><h3>盘后看盘</h3>
+ <div class="panel market-panel"><div class="market-heading"><h3>盘后看盘</h3><button id="market-back" type="button" hidden>返回选股结果</button></div>
  <form id="market-form" class="market-toolbar">
   <label>代码或名称<input id="symbol" value="300138.SZ" placeholder="300138 / 晨光生物"></label>
   <label>周期<select id="market-timeframe"><option value="daily">日线</option><option value="weekly">周线</option><option value="monthly">月线</option></select></label>
   <label>加载范围<select id="market-range"><option value="20000">全部历史</option><option value="120">最近120根K线</option><option value="250">最近250根K线</option><option value="750">最近750根K线</option></select></label>
   <label>起始日<input type="date" id="market-start"></label><label>截止日<input type="date" id="market-end"></label>
   <label>价格口径<select id="market-adjust"><option value="qfq">前复权</option><option value="raw">不复权</option></select></label>
-  <label class="ma-field">均线周期<input id="market-ma" value="5,10,20,60" aria-label="均线周期"></label>
+  <label class="ma-field">均线周期<input id="market-ma" value="5,10,20,30,60,120,250" aria-label="均线周期"></label>
   <label>MACD快线<input id="macd-fast" type="number" value="12" min="1" max="299"></label>
   <label>MACD慢线<input id="macd-slow" type="number" value="26" min="2" max="300"></label>
   <label>MACD信号线<input id="macd-signal" type="number" value="9" min="1" max="300"></label>

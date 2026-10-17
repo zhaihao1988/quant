@@ -66,7 +66,7 @@ def ema(values,period):
     return result
 
 
-def indicators(rows,ma_periods=(5,10,20,60),fast=12,slow=26,signal=9):
+def indicators(rows,ma_periods=(5,10,20,30,60,120,250),fast=12,slow=26,signal=9):
     if not 1<=fast<slow<=300 or not 1<=signal<=300:
         raise ValueError('MACD参数须满足1≤快线<慢线≤300，1≤信号线≤300')
     if not 1<=len(ma_periods)<=8 or any(not 1<=p<=500 for p in ma_periods):
@@ -82,7 +82,7 @@ def indicators(rows,ma_periods=(5,10,20,60),fast=12,slow=26,signal=9):
 
 
 def market_data(symbol,end=None,start=None,limit=20000,adjustment='qfq',timeframe='daily',
-                ma_periods=(5,10,20,60),fast=12,slow=26,signal=9):
+                ma_periods=(5,10,20,30,60,120,250),fast=12,slow=26,signal=9):
     from .services import bars
     if not 1<=limit<=20000:raise ValueError('limit须为1至20000')
     period_bounds(date.today(),timeframe)

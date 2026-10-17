@@ -101,6 +101,15 @@ function renderMultiSignals(){
  $('#multi-results').innerHTML=`<div class="multi-filter-summary"><span>显示 ${rows.length} / ${multiSignals.length} 条信号 · 财务参考日 ${esc(multiSignals[0]?.financial_reference_date||'—')} · ${multiView==='archive'?'当次归档':'最新财务'}</span>${Object.keys(multiFilters).length?'<button type="button" id="multi-clear-filters">清除全部筛选</button>':''}</div><div class="table-wrap">`+table(multiColumns.map(c=>c[1]),rows.map(r=>multiColumns.map(c=>multiCell(r,c[0]))))+'</div>'+(rows.length?'':'<p class="hint">没有匹配结果，可清除筛选。</p>');
  $('#multi-results').classList.remove('empty');
  const wrap=$('#multi-results .table-wrap');
+ wrap.querySelectorAll('tbody tr').forEach((tr,index)=>{
+  for(const column of [0,1]){
+   const cell=tr.cells[column],button=document.createElement('button');
+   button.type='button';button.className='stock-chart-link';button.textContent=cell.textContent;
+   button.setAttribute('aria-label',`查看${rows[index].name} ${rows[index].symbol}行情`);
+   button.onclick=()=>{closeMultiFilter();document.dispatchEvent(new CustomEvent('quant:open-market',{detail:{symbol:rows[index].symbol}}))};
+   cell.replaceChildren(button);
+  }
+ });
  const navigation=document.createElement('div');navigation.className='actions';navigation.setAttribute('aria-label','结果表列导航');
  navigation.innerHTML='<span class="hint">左右查看全部指标：</span><button type="button" data-multi-jump="symbol">证券与信号</button><button type="button" data-multi-jump="total_shares">股本与市值</button><button type="button" data-multi-jump="pe">PE / PB / 增长指标 →</button>';
  const scroll=document.createElement('div');scroll.style.cssText='overflow-x:auto;height:20px;margin-bottom:8px;';scroll.tabIndex=0;scroll.setAttribute('role','region');scroll.setAttribute('aria-label','结果表横向滚动条');

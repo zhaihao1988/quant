@@ -104,7 +104,7 @@ def get_bars(symbol:str,end:date|None=None,start:date|None=None,limit:int=Query(
 
 @app.get('/api/market/{symbol}')
 def market(symbol:str,end:date|None=None,start:date|None=None,limit:int=Query(20000,ge=1,le=20000),
-           adjustment:str='qfq',timeframe:str='daily',ma:str='5,10,20,60',fast:int=12,slow:int=26,signal:int=9):
+           adjustment:str='qfq',timeframe:str='daily',ma:str='5,10,20,30,60,120,250',fast:int=12,slow:int=26,signal:int=9):
     from .charting import market_data
     try:periods=[int(v.strip()) for v in ma.split(',') if v.strip()]
     except ValueError:raise ValueError('均线参数需为逗号分隔的整数')

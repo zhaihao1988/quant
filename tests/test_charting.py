@@ -46,3 +46,20 @@ def test_market_range_does_not_reset_indicators(monkeypatch):
         assert row['ma']==expected[row['trade_date']]['ma']
         assert row['dif']==expected[row['trade_date']]['dif']
         assert row['volume']==expected[row['trade_date']]['volume']
+
+
+def test_long_ma_defaults_warmup_and_short_display(monkeypatch):
+    from quant.charting import market_data
+    from quant import services
+    rows=[bar((date(2020,1,1)+timedelta(days=i)).isoformat(),i+1,i+1,i+1,i+1) for i in range(300)]
+    monkeypatch.setattr(services,'bars',lambda *a,**k:{'bars':rows,'anchor':rows[-1]['trade_date'],'truncated':False})
+    full=market_data('test')
+    assert full['indicator_parameters']['ma']==[5,10,20,30,60,120,250]
+    for period in (30,120,250):
+        key=str(period)
+        assert full['bars'][period-2]['ma'][key] is None
+        assert full['bars'][period-1]['ma'][key]==pytest.approx((period+1)/2)
+        assert full['bars'][-1]['ma'][key]==pytest.approx((601-period)/2)
+    tail=market_data('test',limit=120)
+    assert len(tail['bars'])==120
+    assert tail['bars'][-1]['ma']['250']==full['bars'][-1]['ma']['250']
