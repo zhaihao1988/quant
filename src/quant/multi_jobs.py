@@ -25,14 +25,24 @@ def _active(conn):
     return None
 
 
+def latest_session():
+    with connect() as conn:
+        session=market_session(conn)
+    return clean({'date_mode':'latest','effective_date':session['trade_date'] if session else None,
+                  'session_coverage':session})
+
+
 def reserve(request: MultiScreenRequest):
     with connect() as conn:
-        existing=_active(conn)
-        if existing:
-            if MultiScreenRequest.model_validate(existing['parameters'])==request:return str(existing['id']),True
-            raise ValueError('已有多策略任务正在运行，请等待或停止该任务后再提交')
         session=market_session(conn,request.as_of)
         if not session:raise ValueError('尚无可筛选的盘后数据')
+        existing=_active(conn)
+        if existing:
+            if MultiScreenRequest.model_validate(existing['parameters'])==request and existing['effective_date']==session['trade_date']:
+                return str(existing['id']),True
+            if request.as_of is None and existing['effective_date']!=session['trade_date']:
+                raise ValueError('最新交易日已更新，但旧日期任务仍在运行；请等待或停止旧任务，再按最新日期新建选股')
+            raise ValueError('已有多策略任务正在运行，请等待或停止该任务后再提交')
         run_id=str(uuid4())
         conn.execute("INSERT INTO multi_screen_run(id,status,requested_date,effective_date,parameters) VALUES (%s,'queued',%s,%s,%s)",
                      (run_id,request.as_of,session['trade_date'],Jsonb(request.model_dump(mode='json'))))
@@ -49,6 +59,10 @@ def resume(run_id, workers=4):
         saved=conn.execute('SELECT count(*) AS n FROM multi_screen_item WHERE run_id=%s',(run_id,)).fetchone()['n']
         if saved!=job['processed']:raise ValueError('旧任务缺少完整逐股记录，请新建任务')
         params=MultiScreenRequest.model_validate({**job['parameters'],'workers':workers})
+        if params.as_of is None:
+            session=market_session(conn)
+            if not session or session['trade_date']!=job['effective_date']:
+                raise ValueError('最新可用交易日已变化，请新建最新日期选股；旧任务结果仍保留')
         conn.execute("UPDATE multi_screen_run SET status='queued',parameters=%s,cancel_requested=false,finished_at=NULL,heartbeat_at=now() WHERE id=%s",(Jsonb(params.model_dump(mode='json')),run_id))
     return str(run_id)
 

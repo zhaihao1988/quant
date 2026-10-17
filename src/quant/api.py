@@ -172,6 +172,12 @@ from .multiscreener import MultiScreenRequest, strategy_catalog
 def multi_strategies():return strategy_catalog()
 
 
+@app.get('/api/multi-screens/latest')
+def multi_latest():
+    from .multi_jobs import latest_session
+    return latest_session()
+
+
 @app.get('/api/multi-screens')
 def multi_recent():
     from .multi_jobs import recent

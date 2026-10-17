@@ -31,6 +31,35 @@ def seed_two():
         conn.execute("INSERT INTO daily_bar(symbol,trade_date,open,high,low,close,volume,amount) SELECT '600036.SH',trade_date,open,high,low,close,volume,amount FROM daily_bar WHERE symbol='300138.SZ'")
 
 
+def test_latest_date_advances_without_reusing_old_run(isolated_db,monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from quant import sessions,multi_jobs
+    from quant.api import app
+    monkeypatch.setattr(sessions,'china_now',lambda:datetime(2026,10,12,18,tzinfo=ZoneInfo('Asia/Shanghai')))
+    seed_two();request=MultiScreenRequest(workers=1)
+    old,reused=reserve(request);assert not reused
+    assert reserve(request)==(old,True)
+    with connect() as conn:
+        conn.execute("INSERT INTO daily_bar(symbol,trade_date,open,high,low,close,volume,amount) VALUES ('300138.SZ','2026-10-12',10,11,9,10,10000,100000)")
+    client=TestClient(app)
+    # Half the market is not a sufficiently covered new session.
+    assert client.get('/api/multi-screens/latest').json()['effective_date']=='2026-10-09'
+    with connect() as conn:
+        conn.execute("INSERT INTO daily_bar(symbol,trade_date,open,high,low,close,volume,amount) VALUES ('600036.SH','2026-10-12',10,11,9,10,10000,100000)")
+    assert client.get('/api/multi-screens/latest').json()['effective_date']=='2026-10-12'
+    with pytest.raises(ValueError,match='旧日期任务仍在运行'):reserve(request)
+    cancel(old);run_job(old)
+    with pytest.raises(ValueError,match='最新可用交易日已变化'):multi_jobs.resume(old)
+    response=client.post('/api/multi-screens',json={'symbols':['300138.SZ'],'workers':1})
+    assert response.status_code==202 and response.json()['id']!=old
+    result=snapshot(response.json()['id'])
+    assert result['effective_date']=='2026-10-12' and result['requested_date'] is None
+    assert result['parameters']['as_of'] is None
+    assert result['result']['coverage'][0]['last_date']=='2026-10-12'
+    assert snapshot(old)['effective_date']=='2026-10-09'
+
+
 def test_real_spawn_pool_matches_serial_and_preserves_order(isolated_db):
     seed_two();outputs=[]
     for workers in (1,2):

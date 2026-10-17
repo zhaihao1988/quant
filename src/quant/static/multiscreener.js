@@ -1,4 +1,4 @@
-let multiTask=null,multiTimer=null,multiCatalog=null,multiStarting=false;
+let multiTask=null,multiTimer=null,multiCatalog=null,multiStarting=false,multiLatestDate=null;
 let multiSignals=[],multiSort={key:null,ascending:true};
 let multiFilters={},multiFilterOpen=null,multiTableObserver=null;
 const multiColumns=[['symbol','证券'],['name','名称'],['signal_date','信号日期'],['strategy_label','策略'],['signal_level','级别'],['price_date','价格日期'],['financial_report_date','财报期'],['revenue_total','营业总收入'],['net_profit_parent','归母净利润'],['equity_parent','归母净资产'],['pe','PE'],['pb','PB'],['revenue_growth_yoy','营收同比（比率）'],['profit_growth_yoy','净利同比（比率）'],['peg_like_ratio','PEG类指标'],['net_profit_positive_3y_latest','连续3年及最新净利为正'],['growth_positive','增长为正'],['pe_lt_30','PE<30'],['peg_like_lt_1','PEG<1'],['total_shares','总股本（股）'],['float_shares','流通A股（股）'],['market_cap_formatted','总市值'],['float_market_cap','流通A股市值'],['turnover_pct','参考换手率（%）']];
@@ -127,6 +127,7 @@ const multiState={queued:'排队中',running:'运行中',completed:'已完成',p
 async function loadMulti(){
  loadFundamentalStatus().catch(e=>message(e.message));
  try{
+  await loadMultiLatestDate();
   if(!multiCatalog){
    multiCatalog=await api('/multi-screens/strategies');
    $('#multi-strategies').innerHTML=multiCatalog.strategies.map(s=>`<label class="check"><input type="checkbox" name="multi-strategy" value="${esc(s.id)}" checked> ${esc(s.name)}</label>`).join('');
@@ -146,10 +147,13 @@ async function watchMulti(id){
   const r=await api('/multi-screens/'+id);if(multiTask!==id||multiStarting)return;
   const active=['queued','running'].includes(r.status),out=r.result||{},signals=out.signals||[],errors=out.errors||[];
   $('#multi-submit').disabled=active;$('#multi-stop').disabled=!active;
-  $('#multi-resume').disabled=!['cancelled','interrupted','failed'].includes(r.status);
+  const outdated=!!multiLatestDate&&r.effective_date!==multiLatestDate;
+  $('#multi-resume').disabled=outdated||!['cancelled','interrupted','failed'].includes(r.status);
+  $('#multi-resume').title=outdated?'旧任务日期早于最新数据，请运行最新日期的新任务':'';
   $('#multi-summary').textContent=`${r.effective_date} · ${multiState[r.status]||r.status} · 已扫描 ${r.processed}/${r.total} · ${new Set(signals.map(s=>s.symbol)).size}只股票 / ${signals.length}条信号 ${r.current_symbol?'· '+r.current_symbol:''}`;
   $('#multi-summary').dataset.taskId=id;$('#multi-summary').dataset.status=r.status;
   const execution=out.execution;$('#multi-execution').textContent=execution?`${execution.workers>1?execution.workers+'个进程并行':'串行'} · 已保留此前 ${execution.resumed_after||0} 只股票结果`:'原串行任务';
+  if(outdated)$('#multi-execution').textContent+=` · 当前展示旧日期任务；新选股自动使用 ${multiLatestDate}`;
   multiSignals=signals;
   if(signals.length)renderMultiSignals();else $('#multi-results').innerHTML=`<div class="empty">${active?'正在扫描，信号会陆续展示。':'当前任务没有当日技术信号，请同时核对数据覆盖与错误。'}</div>`;
   $('#multi-errors').innerHTML=errors.length?table(['证券','策略','问题'],errors.map(e=>[e.symbol||'任务',e.strategy_id||'数据读取',e.error])):'暂无数据或执行错误';
@@ -159,6 +163,10 @@ async function watchMulti(id){
  }catch(e){message(e.message);$('#multi-submit').disabled=false}
 }
 document.querySelector('[data-view="multi"]').addEventListener('click',loadMulti);
+async function loadMultiLatestDate(){
+ const latest=await api('/multi-screens/latest');multiLatestDate=latest.effective_date;
+ $('#multi-date').value=multiLatestDate||'暂无可用盘后数据';
+}
 $('#multi-form').onsubmit=async e=>{
  e.preventDefault();multiStarting=true;clearTimeout(multiTimer);$('#multi-submit').disabled=true;message('');
  try{
@@ -171,9 +179,9 @@ $('#multi-form').onsubmit=async e=>{
    symbols.push(exact[0].symbol);
   }
   const body={strategies:[...document.querySelectorAll('[name="multi-strategy"]:checked')].map(i=>i.value),symbols:[...new Set(symbols)],workers:Number($('#multi-workers').value)};
-  if($('#multi-date').value)body.as_of=$('#multi-date').value;
+  // Always let the server resolve the latest session at submission time.
   if($('#multi-pool').value)body.taxonomy_id=$('#multi-pool').value;
-  const r=await api('/multi-screens',body);multiStarting=false;await watchMulti(r.id);
+  const r=await api('/multi-screens',body);multiStarting=false;await loadMultiLatestDate();await watchMulti(r.id);
  }catch(e){multiStarting=false;message(e.message);$('#multi-submit').disabled=false}
 };
 $('#multi-stop').onclick=async()=>{if(multiTask){try{await api('/multi-screens/'+multiTask+'/cancel',{});message('已请求停止，将在当前股票处理结束后停止。')}catch(e){message(e.message)}}};
