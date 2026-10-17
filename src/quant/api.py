@@ -172,6 +172,32 @@ from .multiscreener import MultiScreenRequest, strategy_catalog
 def multi_strategies():return strategy_catalog()
 
 
+class MarketPrepareRequest(BaseModel):
+    screen:MultiScreenRequest|None=None
+
+
+@app.post('/api/market-prepare',status_code=202)
+def prepare_market(body:MarketPrepareRequest,tasks:BackgroundTasks):
+    from .market_prepare import reserve,run
+    job_id,reused=reserve(body.screen.model_dump(mode='json') if body.screen else None)
+    if not reused:tasks.add_task(run,job_id)
+    return {'id':job_id,'reused':reused}
+
+
+@app.get('/api/market-prepare')
+def market_prepare_recent():
+    from .market_prepare import status
+    return status()
+
+
+@app.get('/api/market-prepare/{job_id}')
+def market_prepare_status(job_id:UUID):
+    from .market_prepare import status
+    result=status(job_id)
+    if not result:raise HTTPException(404,'行情准备任务不存在')
+    return result
+
+
 @app.get('/api/multi-screens/latest')
 def multi_latest():
     from .multi_jobs import latest_session

@@ -8,6 +8,8 @@ from .config import settings
 from .db import connect
 from .tdx.readers import int_date,is_a_stock
 
+SCAN_LOCK=779926
+
 
 def inspect_file(symbol,name,path,db_date,db_records,old):
     market=symbol.split('.')[1]
@@ -43,7 +45,7 @@ def inspect_file(symbol,name,path,db_date,db_records,old):
 
 def scan_sources():
     with connect() as lock:
-        if not lock.execute('SELECT pg_try_advisory_lock(779924) AS ok').fetchone()['ok']:return
+        if not lock.execute('SELECT pg_try_advisory_lock(%s) AS ok',(SCAN_LOCK,)).fetchone()['ok']:return False
         try:
             with connect() as conn:
                 conn.execute("INSERT INTO sync_scan(id,status,started_at) VALUES (1,'running',now()) ON CONFLICT(id) DO UPDATE SET status='running',started_at=now(),error=NULL")
@@ -69,9 +71,11 @@ def scan_sources():
                   local_records=EXCLUDED.local_records,db_records=EXCLUDED.db_records,source_mtime_ns=EXCLUDED.source_mtime_ns,
                   state=EXCLUDED.state,reason=EXCLUDED.reason,scanned_at=now()''',rows)
                 conn.execute("UPDATE sync_scan SET status='completed',finished_at=now() WHERE id=1")
+            return True
         except Exception as exc:
             with connect() as conn:conn.execute("UPDATE sync_scan SET status='failed',finished_at=now(),error=%s WHERE id=1",(f'{type(exc).__name__}: {str(exc)[:200]}',))
-        finally:lock.execute('SELECT pg_advisory_unlock(779924)')
+            return False
+        finally:lock.execute('SELECT pg_advisory_unlock(%s)',(SCAN_LOCK,))
 
 
 def comparison(state='',query='',offset=0,limit=30):

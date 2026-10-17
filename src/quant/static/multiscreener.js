@@ -1,4 +1,5 @@
 let multiTask=null,multiTimer=null,multiCatalog=null,multiStarting=false,multiLatestDate=null;
+let multiPreparing=false,marketPrepareTimer=null,marketPrepareTask=null,marketPrepareWasActive=false;
 let multiSignals=[],multiSort={key:null,ascending:true};
 let multiFilters={},multiFilterOpen=null,multiTableObserver=null;
 const multiColumns=[['symbol','证券'],['name','名称'],['signal_date','信号日期'],['strategy_label','策略'],['signal_level','级别'],['price_date','价格日期'],['financial_report_date','财报期'],['revenue_total','营业总收入'],['net_profit_parent','归母净利润'],['equity_parent','归母净资产'],['pe','PE'],['pb','PB'],['revenue_growth_yoy','营收同比（比率）'],['profit_growth_yoy','净利同比（比率）'],['peg_like_ratio','PEG类指标'],['net_profit_positive_3y_latest','连续3年及最新净利为正'],['growth_positive','增长为正'],['pe_lt_30','PE<30'],['peg_like_lt_1','PEG<1'],['total_shares','总股本（股）'],['float_shares','流通A股（股）'],['market_cap_formatted','总市值'],['float_market_cap','流通A股市值'],['turnover_pct','参考换手率（%）']];
@@ -138,6 +139,7 @@ async function loadMulti(){
   $('#multi-history').innerHTML=runs.map(r=>`<button type="button" data-multi-id="${esc(r.id)}">${esc(r.effective_date)} · ${esc(multiState[r.status]||r.status)} · ${r.processed}/${r.total} · ${r.signals}条信号</button>`).join(' ')||'尚无任务';
   document.querySelectorAll('[data-multi-id]').forEach(b=>b.onclick=()=>watchMulti(b.dataset.multiId));
   if(!multiTask&&!multiStarting&&runs.length)await watchMulti(runs[0].id);
+  await watchMarketPrepare();
  }catch(e){message(e.message)}
 }
 async function watchMulti(id){
@@ -146,9 +148,10 @@ async function watchMulti(id){
  try{
   const r=await api('/multi-screens/'+id);if(multiTask!==id||multiStarting)return;
   const active=['queued','running'].includes(r.status),out=r.result||{},signals=out.signals||[],errors=out.errors||[];
-  $('#multi-submit').disabled=active;$('#multi-stop').disabled=!active;
+  $('#multi-submit').disabled=active||multiPreparing;$('#multi-stop').disabled=!active;
+  $('#multi-market-update').disabled=active||multiPreparing;
   const outdated=!!multiLatestDate&&r.effective_date!==multiLatestDate;
-  $('#multi-resume').disabled=outdated||!['cancelled','interrupted','failed'].includes(r.status);
+  $('#multi-resume').disabled=multiPreparing||outdated||!['cancelled','interrupted','failed'].includes(r.status);
   $('#multi-resume').title=outdated?'旧任务日期早于最新数据，请运行最新日期的新任务':'';
   $('#multi-summary').textContent=`${r.effective_date} · ${multiState[r.status]||r.status} · 已扫描 ${r.processed}/${r.total} · ${new Set(signals.map(s=>s.symbol)).size}只股票 / ${signals.length}条信号 ${r.current_symbol?'· '+r.current_symbol:''}`;
   $('#multi-summary').dataset.taskId=id;$('#multi-summary').dataset.status=r.status;
@@ -181,8 +184,39 @@ $('#multi-form').onsubmit=async e=>{
   const body={strategies:[...document.querySelectorAll('[name="multi-strategy"]:checked')].map(i=>i.value),symbols:[...new Set(symbols)],workers:Number($('#multi-workers').value)};
   // Always let the server resolve the latest session at submission time.
   if($('#multi-pool').value)body.taxonomy_id=$('#multi-pool').value;
-  const r=await api('/multi-screens',body);multiStarting=false;await loadMultiLatestDate();await watchMulti(r.id);
+  const r=await api('/market-prepare',{screen:body});marketPrepareTask=r.id;marketPrepareWasActive=true;await watchMarketPrepare(r.id);
  }catch(e){multiStarting=false;message(e.message);$('#multi-submit').disabled=false}
+};
+async function watchMarketPrepare(id=null){
+ clearTimeout(marketPrepareTimer);
+ const job=await api('/market-prepare'+(id?'/'+id:''));
+ if(!job){$('#multi-market-status').textContent='选股前自动核对通达信日期、修改时间和数据库；有变化先同步，再选股。';return}
+ const active=['queued','running'].includes(job.status),p=job.import_progress;
+ multiPreparing=active;if(active)marketPrepareTask=job.id;
+ $('#multi-market-update').disabled=active||$('#multi-stop').disabled===false;
+ if(active){$('#multi-submit').disabled=true;$('#multi-resume').disabled=true}
+ const snapshot=job.result?.after||job.result?.before;
+ $('#multi-market-status').textContent='行情核对：'+job.stage+
+  (p?` · ${p.processed}/${p.total}份 · 新增/修订${p.changed_rows}行`:'')+
+  (snapshot?` · 通达信${snapshot.local_date||'—'} / 数据库${snapshot.db_date||'—'}`:'')+
+  (job.result?.effective_date?` · 最新选股日${job.result.effective_date}`:'')+
+  (snapshot?.missing_files?` · ${snapshot.missing_files}只缺源文件，保留缺失提示`:'')+
+  (job.error?' · '+job.error:'');
+ if(active){marketPrepareWasActive=true;marketPrepareTimer=setTimeout(()=>watchMarketPrepare(job.id).catch(e=>message(e.message)),2000);return}
+ if(marketPrepareWasActive||marketPrepareTask===job.id){
+  marketPrepareWasActive=false;marketPrepareTask=null;multiStarting=false;
+  await loadMultiLatestDate();
+  if(job.screen_id)await watchMulti(job.screen_id);
+  else if(multiTask)await watchMulti(multiTask);
+  else $('#multi-submit').disabled=false;
+ }
+}
+$('#multi-market-update').onclick=async()=>{
+ try{
+  $('#multi-market-update').disabled=true;
+  const r=await api('/market-prepare',{});marketPrepareTask=r.id;marketPrepareWasActive=true;
+  await watchMarketPrepare(r.id);
+ }catch(e){$('#multi-market-update').disabled=false;message(e.message)}
 };
 $('#multi-stop').onclick=async()=>{if(multiTask){try{await api('/multi-screens/'+multiTask+'/cancel',{});message('已请求停止，将在当前股票处理结束后停止。')}catch(e){message(e.message)}}};
 $('#multi-refresh').onclick=loadMulti;
